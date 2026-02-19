@@ -10,7 +10,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // 当 DataContext 设置后，将 StorageProvider 传递给 ViewModel
+        // 当窗口附加到可视化树时，将 StorageProvider 传递给 ViewModel
         this.AttachedToVisualTree += (s, e) =>
         {
             if (DataContext is MainWindowViewModel vm)

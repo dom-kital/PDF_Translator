@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PDFTranslator.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ff837bab6d72ad84bcd85f049690b3e04af84cba")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
 [assembly: System.Reflection.AssemblyProductAttribute("PDFTranslator.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PDFTranslator.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

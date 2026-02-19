@@ -2,19 +2,17 @@
   "version": 3,
   "targets": {
     "net10.0": {
-      "itext/8.0.5": {
+      "itext7/7.2.5": {
         "type": "package",
         "dependencies": {
           "Microsoft.DotNet.PlatformAbstractions": "1.1.0",
           "Microsoft.Extensions.DependencyModel": "1.1.0",
           "Microsoft.Extensions.Logging": "5.0.0",
-          "itext.commons": "8.0.5"
+          "Portable.BouncyCastle": "1.8.9",
+          "itext7.commons": "7.2.5"
         },
         "compile": {
           "lib/netstandard2.0/itext.barcodes.dll": {
-            "related": ".xml"
-          },
-          "lib/netstandard2.0/itext.bouncy-castle-connector.dll": {
             "related": ".xml"
           },
           "lib/netstandard2.0/itext.forms.dll": {
@@ -30,9 +28,6 @@
             "related": ".xml"
           },
           "lib/netstandard2.0/itext.pdfa.dll": {
-            "related": ".xml"
-          },
-          "lib/netstandard2.0/itext.pdfua.dll": {
             "related": ".xml"
           },
           "lib/netstandard2.0/itext.sign.dll": {
@@ -49,9 +44,6 @@
           "lib/netstandard2.0/itext.barcodes.dll": {
             "related": ".xml"
           },
-          "lib/netstandard2.0/itext.bouncy-castle-connector.dll": {
-            "related": ".xml"
-          },
           "lib/netstandard2.0/itext.forms.dll": {
             "related": ".xml"
           },
@@ -67,9 +59,6 @@
           "lib/netstandard2.0/itext.pdfa.dll": {
             "related": ".xml"
           },
-          "lib/netstandard2.0/itext.pdfua.dll": {
-            "related": ".xml"
-          },
           "lib/netstandard2.0/itext.sign.dll": {
             "related": ".xml"
           },
@@ -81,7 +70,7 @@
           }
         }
       },
-      "itext.commons/8.0.5": {
+      "itext7.commons/7.2.5": {
         "type": "package",
         "dependencies": {
           "Microsoft.Extensions.Logging": "5.0.0",
@@ -96,12 +85,6 @@
           "lib/netstandard2.0/itext.commons.dll": {
             "related": ".xml"
           }
-        }
-      },
-      "itext7/8.0.5": {
-        "type": "package",
-        "dependencies": {
-          "itext": "8.0.5"
         }
       },
       "Microsoft.DotNet.PlatformAbstractions/1.1.0": {
@@ -446,6 +429,19 @@
           }
         }
       },
+      "Portable.BouncyCastle/1.8.9": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.0/BouncyCastle.Crypto.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.0/BouncyCastle.Crypto.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "PDFTranslator.Core/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v10.0",
@@ -453,7 +449,7 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.0",
           "Microsoft.Extensions.Http": "9.0.0",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.0",
-          "itext7": "8.0.5"
+          "itext7": "7.2.5"
         },
         "compile": {
           "bin/placeholder/PDFTranslator.Core.dll": {}
@@ -465,22 +461,20 @@
     }
   },
   "libraries": {
-    "itext/8.0.5": {
-      "sha512": "AptrL1Kvm4SrrkZSSfvQF9heRHekr9R91gR/3hEFR0uxJlBdVMmVnPQiTS+AhxJwalNtGNytKeFMWRoEUpWuTg==",
+    "itext7/7.2.5": {
+      "sha512": "S4R7fN3AqbIUJe3BKSRDP2byU+G/rnY8rX3muYuv6VEMQhswlEytjVBvJSloZ6lN24kgm6ZFDkPKdjqSaSEFsw==",
       "type": "package",
-      "path": "itext/8.0.5",
+      "path": "itext7/7.2.5",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "ITSC-avatar.png",
         "LICENSE.md",
         "gnu-agpl-v3.0.md",
-        "itext.8.0.5.nupkg.sha512",
-        "itext.nuspec",
+        "itext7.7.2.5.nupkg.sha512",
+        "itext7.nuspec",
         "lib/net461/itext.barcodes.dll",
         "lib/net461/itext.barcodes.xml",
-        "lib/net461/itext.bouncy-castle-connector.dll",
-        "lib/net461/itext.bouncy-castle-connector.xml",
         "lib/net461/itext.forms.dll",
         "lib/net461/itext.forms.xml",
         "lib/net461/itext.io.dll",
@@ -491,8 +485,6 @@
         "lib/net461/itext.layout.xml",
         "lib/net461/itext.pdfa.dll",
         "lib/net461/itext.pdfa.xml",
-        "lib/net461/itext.pdfua.dll",
-        "lib/net461/itext.pdfua.xml",
         "lib/net461/itext.sign.dll",
         "lib/net461/itext.sign.xml",
         "lib/net461/itext.styledxmlparser.dll",
@@ -501,8 +493,6 @@
         "lib/net461/itext.svg.xml",
         "lib/netstandard2.0/itext.barcodes.dll",
         "lib/netstandard2.0/itext.barcodes.xml",
-        "lib/netstandard2.0/itext.bouncy-castle-connector.dll",
-        "lib/netstandard2.0/itext.bouncy-castle-connector.xml",
         "lib/netstandard2.0/itext.forms.dll",
         "lib/netstandard2.0/itext.forms.xml",
         "lib/netstandard2.0/itext.io.dll",
@@ -513,8 +503,6 @@
         "lib/netstandard2.0/itext.layout.xml",
         "lib/netstandard2.0/itext.pdfa.dll",
         "lib/netstandard2.0/itext.pdfa.xml",
-        "lib/netstandard2.0/itext.pdfua.dll",
-        "lib/netstandard2.0/itext.pdfua.xml",
         "lib/netstandard2.0/itext.sign.dll",
         "lib/netstandard2.0/itext.sign.xml",
         "lib/netstandard2.0/itext.styledxmlparser.dll",
@@ -523,34 +511,20 @@
         "lib/netstandard2.0/itext.svg.xml"
       ]
     },
-    "itext.commons/8.0.5": {
-      "sha512": "exnLqeWOnn0Ee393bHf3zWTmcYuQfYuj7iIbMluG49XFczMWMMXrN9UvMmt5iYOKq0mGZsYb1eRoVATGuDiXGQ==",
+    "itext7.commons/7.2.5": {
+      "sha512": "SGOVNpmPgtrQrwRxnLPObxhp0dytIirRVJGJ6KqrEI2GKQuoINfHv5ymTpQm2odOkz+Iuxaptqv8vLwFXG2blg==",
       "type": "package",
-      "path": "itext.commons/8.0.5",
+      "path": "itext7.commons/7.2.5",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "ITSC-avatar.png",
-        "itext.commons.8.0.5.nupkg.sha512",
-        "itext.commons.nuspec",
+        "itext7.commons.7.2.5.nupkg.sha512",
+        "itext7.commons.nuspec",
         "lib/net461/itext.commons.dll",
         "lib/net461/itext.commons.xml",
         "lib/netstandard2.0/itext.commons.dll",
         "lib/netstandard2.0/itext.commons.xml"
-      ]
-    },
-    "itext7/8.0.5": {
-      "sha512": "/1btEFYY+ncIR7j/g+pr26PX8Nbly8pbdDWfSHQq9E/rbxhz0ylkOLVpXNEvoaV545q508P8hociHaRiRG7bwg==",
-      "type": "package",
-      "path": "itext7/8.0.5",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "ITSC-avatar.png",
-        "LICENSE.md",
-        "gnu-agpl-v3.0.md",
-        "itext7.8.0.5.nupkg.sha512",
-        "itext7.nuspec"
       ]
     },
     "Microsoft.DotNet.PlatformAbstractions/1.1.0": {
@@ -1113,6 +1087,21 @@
         "packageIcon.png"
       ]
     },
+    "Portable.BouncyCastle/1.8.9": {
+      "sha512": "wlJo8aFoeyl+W93iFXTK5ShzDYk5WBqoUPjTNEM0Xv9kn1H+4hmuCjF0/n8HLm9Nnp1aY6KNndWqQTNk+NGgRQ==",
+      "type": "package",
+      "path": "portable.bouncycastle/1.8.9",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "lib/net40/BouncyCastle.Crypto.dll",
+        "lib/net40/BouncyCastle.Crypto.xml",
+        "lib/netstandard2.0/BouncyCastle.Crypto.dll",
+        "lib/netstandard2.0/BouncyCastle.Crypto.xml",
+        "portable.bouncycastle.1.8.9.nupkg.sha512",
+        "portable.bouncycastle.nuspec"
+      ]
+    },
     "PDFTranslator.Core/1.0.0": {
       "type": "project",
       "path": "../PDFTranslator.Core/PDFTranslator.Core.csproj",
@@ -1132,11 +1121,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "E:\\PDF_Translator\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
+      "projectUniqueName": "E:\\PDF_Translator-main\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
       "projectName": "PDFTranslator.CLI",
-      "projectPath": "E:\\PDF_Translator\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
+      "projectPath": "E:\\PDF_Translator-main\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
       "packagesPath": "C:\\Users\\kital\\.nuget\\packages\\",
-      "outputPath": "E:\\PDF_Translator\\PDFTranslator.CLI\\obj\\",
+      "outputPath": "E:\\PDF_Translator-main\\PDFTranslator.CLI\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\kital\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -1151,8 +1140,8 @@
         "net10.0": {
           "targetAlias": "net10.0",
           "projectReferences": {
-            "E:\\PDF_Translator\\PDFTranslator.Core\\PDFTranslator.Core.csproj": {
-              "projectPath": "E:\\PDF_Translator\\PDFTranslator.Core\\PDFTranslator.Core.csproj"
+            "E:\\PDF_Translator-main\\PDFTranslator.Core\\PDFTranslator.Core.csproj": {
+              "projectPath": "E:\\PDF_Translator-main\\PDFTranslator.Core\\PDFTranslator.Core.csproj"
             }
           }
         }

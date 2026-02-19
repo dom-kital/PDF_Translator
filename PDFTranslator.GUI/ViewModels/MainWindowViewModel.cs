@@ -2,31 +2,26 @@ using System;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
-using Avalonia.Platform.Storage;                // 提供 IStorageProvider 用于文件对话框
-using Microsoft.Extensions.Logging;              // 日志
-using PDFTranslator.Core;                         // 核心翻译服务
-using ReactiveUI;                                 // ReactiveUI MVVM 框架
+using Avalonia.Platform.Storage;
+using Microsoft.Extensions.Logging;
+using PDFTranslator.Core;
+using ReactiveUI;
 
 namespace PDFTranslator.GUI.ViewModels;
 
 /// <summary>
-/// 主窗口的视图模型，负责处理用户交互和业务逻辑
+/// 主窗口视图模型，处理用户交互和业务逻辑。
 /// </summary>
 public class MainWindowViewModel : ViewModelBase
 {
-    // ---------- 只读字段（在构造函数中初始化，不可再修改） ----------
-    private readonly PdfTranslator _translator;          // PDF 翻译器
-    private readonly TranslationOptions _options;        // 翻译配置选项
-    private readonly ILogger<MainWindowViewModel> _logger; // 日志记录器
-
-    // ---------- 可变字段（可在方法中修改） ----------
-    private IStorageProvider? _storageProvider;   // 文件存储提供程序（由视图设置，用于打开/保存文件对话框）
+    private readonly PdfTranslator _translator;
+    private readonly TranslationOptions _options;
+    private readonly ILogger<MainWindowViewModel> _logger;
+    private IStorageProvider? _storageProvider;
 
     // ---------- 可绑定属性 ----------
     private string _inputPath = string.Empty;
-    /// <summary>
-    /// 输入 PDF 文件路径
-    /// </summary>
+    /// <summary>输入 PDF 文件路径</summary>
     public string InputPath
     {
         get => _inputPath;
@@ -34,9 +29,7 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private string _outputPath = string.Empty;
-    /// <summary>
-    /// 输出 PDF 文件路径
-    /// </summary>
+    /// <summary>输出 PDF 文件路径</summary>
     public string OutputPath
     {
         get => _outputPath;
@@ -44,37 +37,55 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private bool _isBilingual;
-    /// <summary>
-    /// 是否为双语对照模式（true=双语，false=仅译文）
-    /// </summary>
+    /// <summary>是否为双语对照模式</summary>
     public bool IsBilingual
     {
         get => _isBilingual;
         set
         {
             this.RaiseAndSetIfChanged(ref _isBilingual, value);
-            _options.Mode = value ? TranslationMode.Bilingual : TranslationMode.Translate; // 同步到配置
+            _options.Mode = value ? TranslationMode.Bilingual : TranslationMode.Translate;
         }
     }
 
     private bool _translateImages;
-    /// <summary>
-    /// 是否翻译图片中的文字（预留功能，暂未实现）
-    /// </summary>
+    /// <summary>是否翻译图片中的文字（预留功能）</summary>
     public bool TranslateImages
     {
         get => _translateImages;
         set
         {
             this.RaiseAndSetIfChanged(ref _translateImages, value);
-            _options.TranslateImages = value; // 同步到配置
+            _options.TranslateImages = value;
+        }
+    }
+
+    private string _fontName = string.Empty;
+    /// <summary>用户指定的字体名称（如 SimSun）</summary>
+    public string FontName
+    {
+        get => _fontName;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _fontName, value);
+            _options.FontName = string.IsNullOrEmpty(value) ? null : value;
+        }
+    }
+
+    private string _fontPath = string.Empty;
+    /// <summary>用户指定的字体文件路径</summary>
+    public string FontPath
+    {
+        get => _fontPath;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _fontPath, value);
+            _options.FontPath = string.IsNullOrEmpty(value) ? null : value;
         }
     }
 
     private string _log = string.Empty;
-    /// <summary>
-    /// 日志文本，用于显示在界面上
-    /// </summary>
+    /// <summary>日志文本，用于显示在界面上</summary>
     public string Log
     {
         get => _log;
@@ -82,9 +93,7 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private bool _isBusy;
-    /// <summary>
-    /// 是否正在处理中（用于禁用按钮和显示忙状态）
-    /// </summary>
+    /// <summary>是否正在处理中（用于禁用按钮）</summary>
     public bool IsBusy
     {
         get => _isBusy;
@@ -92,24 +101,11 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     // ---------- 命令 ----------
-    /// <summary>
-    /// 选择输入文件的命令
-    /// </summary>
     public ReactiveCommand<Unit, Unit> SelectInputCommand { get; }
-
-    /// <summary>
-    /// 选择输出文件的命令
-    /// </summary>
     public ReactiveCommand<Unit, Unit> SelectOutputCommand { get; }
-
-    /// <summary>
-    /// 开始翻译的命令
-    /// </summary>
+    public ReactiveCommand<Unit, Unit> SelectFontCommand { get; }
     public ReactiveCommand<Unit, Unit> StartCommand { get; }
 
-    /// <summary>
-    /// 构造函数，通过依赖注入获取所需服务
-    /// </summary>
     public MainWindowViewModel(PdfTranslator translator, TranslationOptions options, ILogger<MainWindowViewModel> logger)
     {
         _translator = translator;
@@ -119,27 +115,25 @@ public class MainWindowViewModel : ViewModelBase
         // 初始化命令
         SelectInputCommand = ReactiveCommand.CreateFromTask(SelectInputAsync);
         SelectOutputCommand = ReactiveCommand.CreateFromTask(SelectOutputAsync);
-        // 开始翻译命令：当不处于忙碌状态时可用
+        SelectFontCommand = ReactiveCommand.CreateFromTask(SelectFontAsync);
         StartCommand = ReactiveCommand.CreateFromTask(StartTranslationAsync,
             this.WhenAnyValue(x => x.IsBusy, x => !x));
 
-        // 设置默认值
-        IsBilingual = false;          // 默认仅译文模式
-        TranslateImages = false;       // 默认不翻译图片
+        // 从配置中初始化属性值
+        IsBilingual = _options.Mode == TranslationMode.Bilingual;
+        TranslateImages = _options.TranslateImages;
+        FontName = _options.FontName ?? string.Empty;
+        FontPath = _options.FontPath ?? string.Empty;
     }
 
     /// <summary>
-    /// 设置存储提供程序（由视图层在窗口加载后调用）
+    /// 设置存储提供程序（由视图层在窗口加载后调用）。
     /// </summary>
-    /// <param name="storageProvider">Avalonia 的 IStorageProvider 实例</param>
     public void SetStorageProvider(IStorageProvider storageProvider)
     {
         _storageProvider = storageProvider;
     }
 
-    /// <summary>
-    /// 选择输入文件
-    /// </summary>
     private async Task SelectInputAsync()
     {
         if (_storageProvider == null)
@@ -148,7 +142,6 @@ public class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        // 打开文件选择对话框，只允许选择 PDF 文件
         var files = await _storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择输入 PDF 文件",
@@ -163,9 +156,6 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// 选择输出文件
-    /// </summary>
     private async Task SelectOutputAsync()
     {
         if (_storageProvider == null)
@@ -174,7 +164,6 @@ public class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        // 打开保存文件对话框，默认扩展名为 .pdf
         var file = await _storageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "选择输出 PDF 文件",
@@ -189,12 +178,36 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// 开始翻译
-    /// </summary>
+    private async Task SelectFontAsync()
+    {
+        if (_storageProvider == null)
+        {
+            Log += "错误：无法访问文件系统，请重启应用。\n";
+            return;
+        }
+
+        var files = await _storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择字体文件",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("字体文件")
+                {
+                    Patterns = new[] { "*.ttf", "*.ttc", "*.otf" }
+                }
+            }
+        });
+
+        if (files.Count == 1)
+        {
+            FontPath = files[0].Path.LocalPath;
+            Log += $"已选择字体文件: {FontPath}\n";
+        }
+    }
+
     private async Task StartTranslationAsync()
     {
-        // 检查输入输出路径是否已选择
         if (string.IsNullOrEmpty(InputPath) || string.IsNullOrEmpty(OutputPath))
         {
             Log += "请先选择输入和输出文件。\n";
@@ -205,10 +218,13 @@ public class MainWindowViewModel : ViewModelBase
         Log += "开始翻译...\n";
         Log += $"模式: {(IsBilingual ? "双语对照" : "仅译文")}\n";
         Log += $"翻译图片: {(TranslateImages ? "是" : "否")}\n";
+        if (!string.IsNullOrEmpty(FontName))
+            Log += $"字体名称: {FontName}\n";
+        if (!string.IsNullOrEmpty(FontPath))
+            Log += $"字体路径: {FontPath}\n";
 
         try
         {
-            // 调用核心翻译服务
             await _translator.TranslatePdfAsync(InputPath, OutputPath);
             Log += "翻译完成！\n";
         }

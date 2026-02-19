@@ -11,8 +11,7 @@
         Width="800" Height="600"
         Icon="/Assets/avalonia-logo.ico">
 
-    <!-- 使用 Grid 布局，行定义：输入行、输出行、模式选择、图片选项、按钮、日志区域 -->
-    <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
+    <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
 
         <!-- 输入文件选择行 -->
         <Grid ColumnDefinitions="*,Auto" Grid.Row="0" Margin="0,5">
@@ -26,22 +25,33 @@
             <Button Grid.Column="1" Content="浏览..." Command="{Binding SelectOutputCommand}" Margin="5,0,0,0" Padding="10,2" />
         </Grid>
 
-        <!-- 模式选择：两个 RadioButton 分别绑定 IsBilingual 和其相反值 -->
+        <!-- 模式选择 -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,5" Spacing="20">
             <RadioButton Content="仅译文模式" IsChecked="{Binding !IsBilingual}" />
             <RadioButton Content="双语对照模式" IsChecked="{Binding IsBilingual}" />
         </StackPanel>
 
-        <!-- 图片翻译选项（预留功能） -->
+        <!-- 图片翻译选项（预留） -->
         <CheckBox Grid.Row="3" Content="翻译图片中的文字（预留功能，暂不可用）" 
                   IsChecked="{Binding TranslateImages}" Margin="0,5" />
 
+        <!-- 字体名称输入 -->
+        <Grid Grid.Row="4" Margin="0,5">
+            <TextBox Text="{Binding FontName}" Watermark="字体名称（可选，如 SimSun）" />
+        </Grid>
+
+        <!-- 字体文件路径选择 -->
+        <Grid ColumnDefinitions="*,Auto" Grid.Row="5" Margin="0,5">
+            <TextBox Text="{Binding FontPath}" Watermark="字体文件路径（可选）" />
+            <Button Grid.Column="1" Content="浏览..." Command="{Binding SelectFontCommand}" Margin="5,0,0,0" Padding="10,2" />
+        </Grid>
+
         <!-- 开始按钮 -->
-        <Button Grid.Row="4" Content="开始翻译" Command="{Binding StartCommand}" 
+        <Button Grid.Row="6" Content="开始翻译" Command="{Binding StartCommand}" 
                 IsEnabled="{Binding !IsBusy}" Margin="0,10" HorizontalAlignment="Center" Padding="20,5" />
 
-        <!-- 日志区域：TextBox 支持自动换行和垂直滚动 -->
-        <TextBox Grid.Row="5" Text="{Binding Log}" IsReadOnly="True" 
+        <!-- 日志区域 -->
+        <TextBox Grid.Row="7" Text="{Binding Log}" IsReadOnly="True" 
                  AcceptsReturn="True" TextWrapping="Wrap"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  Margin="0,5" />

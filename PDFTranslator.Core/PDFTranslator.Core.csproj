@@ -1,26 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- 目标框架：.NET 10（如果兼容性问题可改为 net8.0 或 net9.0） -->
+    <!-- 目标框架为 .NET 10，如果环境不支持可改为 net8.0 -->
     <TargetFramework>net10.0</TargetFramework>
-    <!-- 启用隐式全局 using（自动引入 System、System.Collections.Generic 等） -->
+    <!-- 启用隐式全局 using，减少手动添加的 using 语句 -->
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- 启用可空引用类型，提高代码安全性 -->
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- iText 7 社区版：用于读写 PDF 文件，遵循 AGPL-3.0 许可证 -->
-    <PackageReference Include="itext7" Version="8.0.5" />
-
-    <!-- 依赖注入抽象：提供 IServiceCollection 等接口，不包含具体容器 -->
+    <!-- iText 7 社区版 (AGPL-3.0 许可证)，用于 PDF 读写和排版操作 -->
+    <PackageReference Include="itext7" Version="7.2.5" />
+    <!-- 依赖注入抽象接口，定义 IServiceCollection 等 -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
-
-    <!-- 日志抽象：提供 ILogger 等接口 -->
+    <!-- 日志抽象接口，定义 ILogger 等 -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
-
-    <!-- HttpClient 扩展：提供 AddHttpClient 方法用于注册 HttpClient -->
+    <!-- HttpClient 扩展，提供 AddHttpClient 方法 -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 可选：嵌入字体文件。如果希望内置默认字体，可以将字体文件放在 Fonts 文件夹并取消注释以下行 -->
+    <!-- <EmbeddedResource Include="Fonts\NotoSansSC-Regular.ttf" /> -->
   </ItemGroup>
 
 </Project>
