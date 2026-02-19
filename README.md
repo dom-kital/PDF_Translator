@@ -2,7 +2,7 @@
 
 📄 **PDFTranslator** 是一款基于 [Ollama](https://ollama.ai/) 的本地 PDF 翻译工具，提供图形界面（GUI）和命令行界面（CLI），支持双语对照和仅译文两种翻译模式，并尽可能保持原始 PDF 的排版（包括文本、图像和图形）。
 
-![GUI Screenshot](docs/screenshot.png) <!-- 如果您有截图，请替换为实际路径 -->
+![GUI Screenshot](.GUI_screenshot.PNG) <!-- 如果您有截图，请替换为实际路径 -->
 
 ##目录结构
 ```bash
@@ -63,9 +63,13 @@ dotnet build
 ```
 
 ### 运行 GUI 版本
+```bash
 dotnet run --project PDFTranslator.GUI
+```
 ### 运行 CLI 版本
+```bash
 dotnet run --project PDFTranslator.CLI -- <输入PDF> <输出PDF> [选项]
+```
 #### 示例
 ```bash
 # 仅译文模式
