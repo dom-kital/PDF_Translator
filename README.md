@@ -1,0 +1,2 @@
+# PDF_Translator
+一款基于调用ollama实现的本地PDF翻译器
