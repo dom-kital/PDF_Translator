@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 目标框架：.NET 10（如果兼容性问题可改为 net8.0 或 net9.0） -->
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- 启用隐式全局 using（自动引入 System、System.Collections.Generic 等） -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- 启用可空引用类型，提高代码安全性 -->
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- iText 7 社区版：用于读写 PDF 文件，遵循 AGPL-3.0 许可证 -->
+    <PackageReference Include="itext7" Version="8.0.5" />
+
+    <!-- 依赖注入抽象：提供 IServiceCollection 等接口，不包含具体容器 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+
+    <!-- 日志抽象：提供 ILogger 等接口 -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+
+    <!-- HttpClient 扩展：提供 AddHttpClient 方法用于注册 HttpClient -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,53 @@
+一、项目需求分析
+1.核心功能
+普通翻译：将 PDF 中的所有文本内容翻译成目标语言，生成新的 PDF，尽量保持原排版（字体、字号、位置）。
+双语对照翻译：保留原文，同时在原文旁边或下方添加译文，形成对照（类似沉浸式翻译）。
+图片翻译选项：用户可选择是否翻译 PDF 中的图片文字（需要 OCR 或多模态模型支持，较为复杂，可作为高级功能）。
+排版一致：翻译后 PDF 的布局、图片、表格等元素尽量与原文一致。
+
+2.技术限制
+使用 C# 和 .NET 10。
+调用本地 Ollama API（默认地址 http://localhost:11434）。
+所有组件必须开源且允许商用（如 MIT、Apache-2.0、BSD 等），或者至少允许在开源项目中使用（如 AGPL，但需注意其传染性）。
+
+3.用户界面
+GUI：图形界面，方便普通用户操作。
+CLI：命令行界面，适合批量处理或集成到脚本中。
+
+二、技术选型
+1. PDF 处理库
+iText 7 Community (AGPL)：功能最全面的 PDF 库，支持文本提取、内容修改、生成 PDF。AGPL 要求如果你分发软件，必须开源整个项目，这对开源项目来说没问题。但如果你将来希望闭源，则不能使用。
+PdfPig (Apache-2.0)：轻量级，主要用于读取 PDF，提取文本和位置信息，但不能直接修改或生成 PDF。
+PDFsharp (MIT)：可生成 PDF，但功能有限，不适合复杂排版。
+
+组合方案：使用 PdfPig 提取文本和位置信息，再用 PDFsharp 或 QuestPDF (MIT) 生成新的 PDF。但生成时精确还原原排版非常困难。
+
+建议：对于初学者，iText 7 Community 是最容易上手的，因为它既支持读取也支持写入，且有详细的文档。但你需要接受 AGPL 协议。如果你希望更宽松的许可，可以选择 PdfPig + QuestPDF，但实现难度较大。
+本指南将采用 iText 7 Community，因为它能最大程度满足“保持排版”的需求。
+
+本指南将采用 iText 7 Community，因为它能最大程度满足“保持排版”的需求。
+
+2. Ollama API 调用
+使用 HttpClient 发送 POST 请求到 http://localhost:11434/api/generate 或 api/chat。
+请求格式 JSON，包含模型名称、提示词等。
+推荐使用非流式响应，简化处理。
+
+3. GUI 框架
+Avalonia UI (MIT)：跨平台，支持 Windows、Linux、macOS，样式现代，适合开源项目。
+Windows Forms：仅限 Windows，但简单易学。
+MAUI：微软官方跨平台，但相对复杂且 .NET 10 支持可能还不稳定。
+建议：为了跨平台和未来可扩展性，选择 Avalonia UI。如果你只想在 Windows 上运行，可以使用 Windows Forms。本指南将以 Avalonia 为例，但也会提及 CLI 的创建。
+
+4. CLI 框架
+直接使用控制台应用程序，通过命令行参数解析库（如 System.CommandLine，但 .NET 内置的 args 也够用）。
+
+5. 其他工具
+依赖注入：可用于管理 HttpClient、配置等（可选）。
+日志：使用 ILogger 或简单控制台输出。
+
+三、总体架构
+我们将项目分为三个部分：
+核心库 (PDFTranslator.Core)：包含 PDF 处理、翻译逻辑、Ollama 客户端。
+命令行应用 (PDFTranslator.CLI)：引用核心库，处理命令行参数。
+图形界面应用 (PDFTranslator.GUI)：引用核心库，提供 Avalonia 界面。
+这样结构清晰，便于维护和扩展。

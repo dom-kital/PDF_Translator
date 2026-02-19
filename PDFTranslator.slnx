@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="PDFTranslator.CLI/PDFTranslator.CLI.csproj" />
+  <Project Path="PDFTranslator.Core/PDFTranslator.Core.csproj" />
+  <Project Path="PDFTranslator.GUI/PDFTranslator.GUI.csproj" />
+</Solution>
