@@ -7,10 +7,14 @@
 - PdfTranslator.GUI         // Windows Forms 应用 (图形界面)
 ## 2.搭建安装环境
 ### 2.1 利用dotnet命令行安装PdfTranslator.Core所需库
+```
 dotnet add package UglyToad.PdfPig
 dotnet add package QuestPDF
 dotnet add package Microsoft.Extensions.Http
 dotnet add package System.Text.Json
+```
 ### 2.2  利用dotnet命令行安装PdfTranslator.CLI所需库
+```
 dotnet add package System.CommandLine
 dotnet add package System.CommandLine.NamingConventionBinder
+```
