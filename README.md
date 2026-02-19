@@ -56,7 +56,7 @@ PDFTranslator/
 ### 下载与编译
 
 ```bash
-git clone https://github.com/yourname/PDFTranslator.git
+git clone https://github.com/dom-kital/PDF_Translator.git
 cd PDFTranslator
 dotnet restore
 dotnet build
@@ -87,7 +87,7 @@ dotnet run --project PDFTranslator.CLI -- input.pdf output.pdf --mode bilingual 
 |  --help, -h |  显示帮助信息 |
 
 ### 缺点
-- 字体支持：默认字体不支持中文，需手动配置中文字体（如上所述）。
+- ~~字体支持：默认字体不支持中文，需手动配置中文字体（已实现）。~~
 - 仅译文模式的背景：目前用白色矩形覆盖原文，若原 PDF 背景非白色，会留下白色块。后续可考虑提取背景色或使用半透明覆盖。
 - 图片翻译：尚未实现图片文字识别与翻译（计划集成 Tesseract 或多模态模型）。
 - 文本块合并：当前每个文本块（可能为单词或字符）单独翻译，可能导致上下文割裂，后续版本将优化为按行或段落合并翻译。
