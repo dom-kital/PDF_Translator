@@ -4,7 +4,7 @@
 
 ![GUI Screenshot](./GUI_screenshot.PNG) 
 
-##目录结构
+## 目录结构
 ```bash
 PDFTranslator/
 ├── PDFTranslator.sln
