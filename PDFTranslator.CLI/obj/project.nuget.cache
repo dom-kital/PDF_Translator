@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "23kkA5QJ4AE=",
+  "dgSpecHash": "4/X4AXwDNaU=",
   "success": true,
-  "projectFilePath": "E:\\PDF_Translator-main\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
+  "projectFilePath": "E:\\PDF_Translator\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\kital\\.nuget\\packages\\itext7\\7.2.5\\itext7.7.2.5.nupkg.sha512",
     "C:\\Users\\kital\\.nuget\\packages\\itext7.commons\\7.2.5\\itext7.commons.7.2.5.nupkg.sha512",

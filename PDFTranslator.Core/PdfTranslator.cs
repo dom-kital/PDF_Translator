@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using iText.Kernel.Colors;
 using iText.Kernel.Font;
 using iText.Kernel.Geom;
@@ -7,19 +8,32 @@ using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Data;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using iText.Kernel.Pdf.Extgstate;
-using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace PDFTranslator.Core;
 
 /// <summary>
-/// PDF 翻译器主类，负责提取原文、调用翻译、生成新 PDF，并尽量保持原排版。
+/// PDF 翻译器核心类
+/// 负责从 PDF 提取文本、调用 Ollama 翻译、生成新 PDF 并尽量保持原排版
+/// 支持两种模式：双语对照（保留原文）和仅译文（替换原文）
+/// 支持进度报告功能，可在 CLI 和 GUI 中显示处理进度
 /// </summary>
 public class PdfTranslator
 {
-    private readonly OllamaService _ollama;
-    private readonly ILogger<PdfTranslator> _logger;
-    private readonly TranslationOptions _options;
+    private readonly OllamaService _ollama;           // Ollama 翻译服务
+    private readonly ILogger<PdfTranslator> _logger;   // 日志记录器
+    private readonly TranslationOptions _options;      // 翻译配置选项
+    private IProgressReporter? _progressReporter;      // 进度报告器（可选，由调用方设置）
 
+    /// <summary>
+    /// 构造函数，通过依赖注入获取所需服务
+    /// </summary>
+    /// <param name="ollama">Ollama 翻译服务</param>
+    /// <param name="logger">日志记录器</param>
+    /// <param name="options">翻译配置选项（包含字体、模式等设置）</param>
     public PdfTranslator(OllamaService ollama, ILogger<PdfTranslator> logger, TranslationOptions options)
     {
         _ollama = ollama;
@@ -28,43 +42,69 @@ public class PdfTranslator
     }
 
     /// <summary>
-    /// 翻译 PDF 文件的入口方法。
+    /// 设置进度报告器（可选）
+    /// 由 CLI 或 GUI 在调用 TranslatePdfAsync 之前调用，用于接收处理进度
     /// </summary>
-    /// <param name="inputPath">输入 PDF 文件路径。</param>
-    /// <param name="outputPath">输出 PDF 文件路径。</param>
+    /// <param name="reporter">实现了 IProgressReporter 接口的进度报告器</param>
+    public void SetProgressReporter(IProgressReporter reporter)
+    {
+        _progressReporter = reporter;
+    }
+
+    /// <summary>
+    /// 翻译 PDF 文件的主入口方法
+    /// </summary>
+    /// <param name="inputPath">输入 PDF 文件路径</param>
+    /// <param name="outputPath">输出 PDF 文件路径</param>
     public async Task TranslatePdfAsync(string inputPath, string outputPath)
     {
         _logger.LogInformation("开始处理 PDF: {InputPath}", inputPath);
 
-        // 使用 using 确保资源释放
+        // 使用 using 确保资源释放：读取器、写入器和 PDF 文档对象
         using var reader = new PdfReader(inputPath);
         using var writer = new PdfWriter(outputPath);
         using var pdf = new PdfDocument(reader, writer);
 
         int pageCount = pdf.GetNumberOfPages();
+        
+        // 报告初始进度（0%）
+        _progressReporter?.Report(0, pageCount, "开始处理...");
+
+        // 逐页处理
         for (int pageNum = 1; pageNum <= pageCount; pageNum++)
         {
             _logger.LogInformation("正在处理第 {PageNum}/{TotalPages} 页...", pageNum, pageCount);
+            
+            // 报告当前页进度（pageNum-1 表示已处理的页数，因为当前页还未完成）
+            _progressReporter?.Report(pageNum - 1, pageCount, $"正在处理第 {pageNum} 页...");
 
             var page = pdf.GetPage(pageNum);
+            
             // 提取当前页的所有文本块及其位置
             var textBlocks = ExtractTextBlocks(page);
+
+            // 如果当前页没有文本，跳过但保留原页面内容
             if (textBlocks.Count == 0)
             {
                 _logger.LogWarning("第 {PageNum} 页没有可翻译的文本", pageNum);
                 continue;
             }
 
-            // 在页面上添加译文（根据模式不同）
+            // 在当前页上添加译文（根据模式）
             await AddTranslationsToPage(pdf, page, textBlocks);
         }
 
+        // 报告完成状态
+        _progressReporter?.Complete("翻译完成！");
         _logger.LogInformation("PDF 翻译完成，已保存至 {OutputPath}", outputPath);
     }
 
     /// <summary>
-    /// 使用自定义策略提取页面中的所有文本块及其位置矩形。
+    /// 提取页面中的所有文本块及其位置矩形
+    /// 使用自定义的 TextBlockExtractionStrategy 获取每个文本块的位置信息
     /// </summary>
+    /// <param name="page">PDF 页面对象</param>
+    /// <returns>文本块列表，每个块包含文本内容和位置矩形</returns>
     private List<TextBlock> ExtractTextBlocks(PdfPage page)
     {
         var strategy = new TextBlockExtractionStrategy();
@@ -74,8 +114,11 @@ public class PdfTranslator
     }
 
     /// <summary>
-    /// 根据配置的模式在页面上添加译文。
+    /// 根据配置的模式在页面上添加译文
     /// </summary>
+    /// <param name="pdf">PDF 文档对象</param>
+    /// <param name="page">当前页面</param>
+    /// <param name="blocks">当前页的文本块列表</param>
     private async Task AddTranslationsToPage(PdfDocument pdf, PdfPage page, List<TextBlock> blocks)
     {
         // 创建一个新的内容流，追加到原页面内容之后，保证原内容完全保留
@@ -89,7 +132,7 @@ public class PdfTranslator
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "加载字体失败，将使用默认字体（中文可能显示为方框）");
+            _logger.LogWarning(ex, "加载字体失败，使用默认字体（中文可能显示为方框）");
             font = PdfFontFactory.CreateFont(); // 回退到默认字体
         }
 
@@ -97,7 +140,8 @@ public class PdfTranslator
 
         if (_options.Mode == TranslationMode.Bilingual)
         {
-            // 双语模式：保留原文，在原文下方添加蓝色半透明译文
+            // ========== 双语对照模式 ==========
+            // 保留原文，在原文下方添加蓝色半透明译文
             canvas.SetColor(ColorConstants.BLUE, true);               // 设置字体颜色为蓝色
             canvas.SetExtGState(new PdfExtGState().SetFillOpacity(0.8f)); // 设置透明度 80%
 
@@ -106,6 +150,7 @@ public class PdfTranslator
                 if (string.IsNullOrWhiteSpace(block.Text) || block.Rect == null)
                     continue;
 
+                // 调用 Ollama 翻译原文
                 string translated = await _ollama.TranslateAsync(block.Text);
 
                 float x = block.Rect.GetX();                      // 原文左下角 X 坐标
@@ -117,6 +162,7 @@ public class PdfTranslator
                     y = block.Rect.GetY() + block.Rect.GetHeight() + 2;
                 }
 
+                // 绘制译文
                 canvas.BeginText()
                     .SetFontAndSize(font, fontSize)
                     .MoveText(x, y)
@@ -126,7 +172,8 @@ public class PdfTranslator
         }
         else // TranslationMode.Translate
         {
-            // 仅译文模式：用白色矩形覆盖原文，然后在相同位置绘制黑色译文
+            // ========== 仅译文模式 ==========
+            // 用白色矩形覆盖原文，然后在相同位置绘制黑色译文
             canvas.SetFillColor(ColorConstants.WHITE);   // 设置填充色为白色
             canvas.SetStrokeColor(ColorConstants.WHITE); // 设置描边色为白色
 
@@ -135,6 +182,7 @@ public class PdfTranslator
                 if (string.IsNullOrWhiteSpace(block.Text) || block.Rect == null)
                     continue;
 
+                // 调用 Ollama 翻译原文
                 string translated = await _ollama.TranslateAsync(block.Text);
 
                 float x = block.Rect.GetX();
@@ -160,27 +208,31 @@ public class PdfTranslator
     }
 
     /// <summary>
-    /// 表示一个文本块及其在页面上的位置矩形。
+    /// 表示一个文本块及其在页面上的位置矩形
+    /// 用于在提取文本时同时记录坐标信息，便于后续精准放置译文
     /// </summary>
     private class TextBlock
     {
+        /// <summary>文本内容（可能为 null）</summary>
         public string? Text { get; set; }
+        
+        /// <summary>文本所占的矩形区域（可能为 null）</summary>
         public Rectangle? Rect { get; set; }
     }
 
     /// <summary>
-    /// 自定义文本提取策略，实现 ITextExtractionStrategy 接口，
-    /// 用于收集页面中每个文本块及其精确位置。
+    /// 自定义文本提取策略，实现 ITextExtractionStrategy 接口
+    /// 用于收集页面中每个文本块及其精确位置，而不是只提取纯文本
     /// </summary>
     private class TextBlockExtractionStrategy : ITextExtractionStrategy
     {
         private List<TextBlock> _textBlocks = new();
 
         /// <summary>
-        /// 当解析器处理页面内容时触发的事件。
+        /// 当解析器遇到事件时调用（如文本渲染、图像等）
         /// </summary>
-        /// <param name="data">事件数据，如文本渲染信息。</param>
-        /// <param name="type">事件类型。</param>
+        /// <param name="data">事件数据</param>
+        /// <param name="type">事件类型</param>
         public void EventOccurred(IEventData data, EventType type)
         {
             // 只关心文本渲染事件
@@ -195,37 +247,40 @@ public class PdfTranslator
                 var ascentLine = renderInfo.GetAscentLine();
                 var descentLine = renderInfo.GetDescentLine();
 
-                // 计算矩形的左下角坐标和宽高
+                // 计算矩形左下角坐标和宽高
+                // 取上升线和下降线的最小/最大坐标值得到完整的文本边界
                 float x1 = Math.Min(ascentLine.GetStartPoint().Get(0), descentLine.GetStartPoint().Get(0));
                 float x2 = Math.Max(ascentLine.GetEndPoint().Get(0), descentLine.GetEndPoint().Get(0));
                 float y1 = Math.Min(descentLine.GetStartPoint().Get(1), descentLine.GetEndPoint().Get(1));
                 float y2 = Math.Max(ascentLine.GetStartPoint().Get(1), ascentLine.GetEndPoint().Get(1));
                 var rect = new Rectangle(x1, y1, x2 - x1, y2 - y1);
 
+                // 添加到列表
                 _textBlocks.Add(new TextBlock { Text = text, Rect = rect });
             }
         }
 
         /// <summary>
-        /// 返回此策略关心的事件类型，以优化解析性能。
+        /// 返回此策略关心的事件类型，以优化解析性能
         /// </summary>
+        /// <returns>只关心 RENDER_TEXT 事件</returns>
         public ICollection<EventType> GetSupportedEvents()
         {
             return new List<EventType> { EventType.RENDER_TEXT };
         }
 
         /// <summary>
-        /// 获取收集到的所有文本块。
+        /// 获取收集到的所有文本块
         /// </summary>
         public List<TextBlock> GetTextBlocks() => _textBlocks;
 
         /// <summary>
-        /// 获取提取到的全部文本（用于兼容旧版接口）。
+        /// 获取提取到的全部文本（用于兼容旧版接口）
         /// </summary>
         public string GetResultantText() => string.Join("", _textBlocks.Select(t => t.Text));
 
         /// <summary>
-        /// 旧版接口遗留方法，无需实现。
+        /// 旧版接口遗留方法，无需实现，留空即可
         /// </summary>
         public void RenderText(TextRenderInfo renderInfo) { }
     }

@@ -1121,11 +1121,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "E:\\PDF_Translator-main\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
+      "projectUniqueName": "E:\\PDF_Translator\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
       "projectName": "PDFTranslator.CLI",
-      "projectPath": "E:\\PDF_Translator-main\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
+      "projectPath": "E:\\PDF_Translator\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
       "packagesPath": "C:\\Users\\kital\\.nuget\\packages\\",
-      "outputPath": "E:\\PDF_Translator-main\\PDFTranslator.CLI\\obj\\",
+      "outputPath": "E:\\PDF_Translator\\PDFTranslator.CLI\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\kital\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -1140,8 +1140,8 @@
         "net10.0": {
           "targetAlias": "net10.0",
           "projectReferences": {
-            "E:\\PDF_Translator-main\\PDFTranslator.Core\\PDFTranslator.Core.csproj": {
-              "projectPath": "E:\\PDF_Translator-main\\PDFTranslator.Core\\PDFTranslator.Core.csproj"
+            "E:\\PDF_Translator\\PDFTranslator.Core\\PDFTranslator.Core.csproj": {
+              "projectPath": "E:\\PDF_Translator\\PDFTranslator.Core\\PDFTranslator.Core.csproj"
             }
           }
         }
