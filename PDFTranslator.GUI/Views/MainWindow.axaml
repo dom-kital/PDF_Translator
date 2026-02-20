@@ -11,10 +11,13 @@
         Width="800" Height="600"
         Icon="/Assets/avalonia-logo.ico">
 
-    <!-- 主网格布局：共11行 -->
-    <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
+    <!-- 
+        主窗口布局：使用 Grid 进行整体布局，共定义12行（0-11）。
+        每行高度均为 Auto（根据内容自动调整），最后一行 * 表示填充剩余空间。
+    -->
+    <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
 
-        <!-- 第0行：Ollama 配置区域（可折叠） -->
+        <!-- ===== 第0行：Ollama 配置区域（可折叠）===== -->
         <Expander Header="⚙️ Ollama 配置" 
                   Grid.Row="0" 
                   Margin="0,0,0,5" 
@@ -22,71 +25,58 @@
                   Background="#F5F5F5"
                   CornerRadius="3"
                   Padding="5">
-            
             <StackPanel Margin="5" Spacing="8">
-                
-                <!-- 第一行：URL输入框 + 状态显示 + 测试按钮 + 保存按钮 -->
+                <!-- 第一行：URL输入框 + 状态文本 + 测试按钮 + 保存按钮 -->
                 <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                    <!-- Ollama API 地址输入框 -->
                     <TextBox Text="{Binding OllamaUrl}" 
                              Watermark="http://localhost:11434" 
                              Grid.Column="0" 
                              Margin="0,0,5,0"
-                             ToolTip.Tip="Ollama 服务的地址" />
-                    
+                             ToolTip.Tip="Ollama 服务的地址，例如 http://localhost:11434" />
+                    <!-- 连接状态显示 -->
                     <TextBlock Text="{Binding OllamaStatusMessage}" 
                                Grid.Column="1" 
                                VerticalAlignment="Center" 
                                Margin="5,0"
                                FontWeight="Bold" />
-                    
+                    <!-- 测试连接按钮 -->
                     <Button Content="测试连接" 
                             Command="{Binding TestOllamaConnectionCommand}" 
                             Grid.Column="2" 
                             Margin="5,0" 
                             Padding="10,2"
                             ToolTip.Tip="测试与 Ollama 服务的连接" />
-                    
+                    <!-- 保存配置按钮（仅记录日志） -->
                     <Button Content="保存" 
                             Command="{Binding SaveOllamaConfigCommand}" 
                             Grid.Column="3" 
                             Padding="10,2"
-                            ToolTip.Tip="保存当前 Ollama 配置" />
+                            ToolTip.Tip="保存当前 Ollama 配置到日志" />
                 </Grid>
 
-                <!-- 第二行：模型下拉菜单 + 超时时间 + 刷新按钮 -->
+                <!-- 第二行：模型下拉菜单 + 超时时间 + 刷新模型按钮 -->
                 <Grid ColumnDefinitions="2*,*,Auto">
-                    
-                    <!-- 模型下拉菜单 -->
+                    <!-- 模型选择区域 -->
                     <Grid Grid.Column="0" Margin="0,0,5,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        
                         <TextBlock Text="模型:" 
                                    VerticalAlignment="Center" 
                                    Margin="0,0,5,0" 
                                    Grid.Column="0"/>
-                        
+                        <!-- 模型下拉框，绑定可用模型列表和选中项 -->
                         <ComboBox Grid.Column="1"
                                   ItemsSource="{Binding AvailableModels}"
                                   SelectedItem="{Binding SelectedModel}"
                                   DisplayMemberBinding="{Binding DisplayName}"
                                   IsEnabled="{Binding IsOllamaConnected}"
-                                  ToolTip.Tip="选择要使用的 Ollama 模型">
-                            <ComboBox.DataTemplates>
-                                <DataTemplate DataType="vm:OllamaModelInfo">
-                                    <StackPanel Orientation="Horizontal" Spacing="5">
-                                        <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
-                                        <TextBlock Text="{Binding Size, StringFormat='({0:F1} MB)'}" 
-                                                   Foreground="Gray" FontSize="10"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.DataTemplates>
-                        </ComboBox>
+                                  ToolTip.Tip="选择要使用的 Ollama 模型" />
                     </Grid>
-                    
-                    <!-- 超时时间输入框 -->
+
+                    <!-- 超时时间输入区域 -->
                     <Grid ColumnDefinitions="Auto,*" Grid.Column="1" Margin="5,0,5,0">
                         <TextBlock Text="超时:" 
                                    VerticalAlignment="Center" 
@@ -96,8 +86,8 @@
                                  Grid.Column="1"
                                  ToolTip.Tip="API 请求超时时间（秒）" />
                     </Grid>
-                    
-                    <!-- 刷新模型按钮 - 简化版，移除动画 -->
+
+                    <!-- 刷新模型按钮 -->
                     <Button Grid.Column="2" 
                             Padding="10,2"
                             Command="{Binding RefreshModelsCommand}"
@@ -106,21 +96,11 @@
                         <StackPanel Orientation="Horizontal" Spacing="5">
                             <TextBlock Text="🔄" />
                             <TextBlock Text="刷新模型" />
-                            <!-- 使用简单的文本显示加载状态，替代动画 -->
-                            <TextBlock Text="..." 
-                                       IsVisible="{Binding IsRefreshingModels}"
-                                       FontWeight="Bold" />
                         </StackPanel>
                     </Button>
                 </Grid>
 
-                <!-- 模型列表状态信息 -->
-                <TextBlock Text="{Binding ModelListStatus}" 
-                           FontSize="11" 
-                           Foreground="Gray"
-                           IsVisible="{Binding !IsRefreshingModels}" />
-
-                <!-- 连接状态指示器 -->
+                <!-- 连接状态指示器：绿色表示已连接，橙色表示未连接 -->
                 <Border Background="#4CAF50" 
                         CornerRadius="3" 
                         Padding="5" 
@@ -130,7 +110,6 @@
                                FontWeight="Bold"
                                HorizontalAlignment="Center" />
                 </Border>
-                
                 <Border Background="#FF9800" 
                         CornerRadius="3" 
                         Padding="5" 
@@ -143,7 +122,7 @@
             </StackPanel>
         </Expander>
 
-        <!-- 第1行：输入文件选择 -->
+        <!-- ===== 第1行：输入文件选择 ===== -->
         <Grid ColumnDefinitions="*,Auto" Grid.Row="1" Margin="0,5">
             <TextBox Text="{Binding InputPath}" 
                      Watermark="选择输入 PDF 文件" 
@@ -157,7 +136,7 @@
                     ToolTip.Tip="打开文件选择对话框" />
         </Grid>
 
-        <!-- 第2行：输出文件选择 -->
+        <!-- ===== 第2行：输出文件选择 ===== -->
         <Grid ColumnDefinitions="*,Auto" Grid.Row="2" Margin="0,5">
             <TextBox Text="{Binding OutputPath}" 
                      Watermark="选择输出 PDF 文件路径" 
@@ -171,46 +150,66 @@
                     ToolTip.Tip="打开保存文件对话框" />
         </Grid>
 
-        <!-- 第3行：翻译模式选择 -->
+        <!-- ===== 第3行：翻译模式选择 ===== -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,5" Spacing="20">
             <RadioButton Content="📄 仅译文模式" 
                          IsChecked="{Binding !IsBilingual}"
                          ToolTip.Tip="用译文替换原文，适合背景为白色的文档" />
             <RadioButton Content="🌐 双语对照模式" 
                          IsChecked="{Binding IsBilingual}"
-                         ToolTip.Tip="保留原文，在原文下方添加蓝色半透明译文" />
+                         ToolTip.Tip="保留原文，在原文下方添加蓝色半透明译文，便于对比学习" />
         </StackPanel>
 
-        <!-- 第4行：图片翻译选项（预留） -->
-        <CheckBox Grid.Row="4" 
+        <!-- ===== 第4行：语言选择 ===== -->
+        <Grid Grid.Row="4" ColumnDefinitions="*,Auto,*" Margin="0,5">
+            <!-- 源语言下拉框 -->
+            <ComboBox Grid.Column="0" 
+                      ItemsSource="{Binding SourceLanguages}"
+                      SelectedItem="{Binding SourceLanguage}"
+                      ToolTip.Tip="源语言代码（如 en, zh, ja）"/>
+            <!-- 箭头分隔 -->
+            <TextBlock Grid.Column="1" 
+                       Text=" → " 
+                       VerticalAlignment="Center" 
+                       HorizontalAlignment="Center" 
+                       Margin="5,0"/>
+            <!-- 目标语言下拉框 -->
+            <ComboBox Grid.Column="2" 
+                      ItemsSource="{Binding TargetLanguages}"
+                      SelectedItem="{Binding TargetLanguage}"
+                      ToolTip.Tip="目标语言代码（如 zh, en, fr）"/>
+        </Grid>
+
+        <!-- ===== 第5行：图片翻译选项（预留功能）===== -->
+        <CheckBox Grid.Row="5" 
                   Content="🖼️ 翻译图片中的文字（预留功能）" 
                   IsChecked="{Binding TranslateImages}" 
                   Margin="0,5"
                   IsEnabled="False"
                   ToolTip.Tip="此功能正在开发中，敬请期待" />
 
-        <!-- 第5行：字体名称输入 -->
-        <Grid Grid.Row="5" Margin="0,5">
+        <!-- ===== 第6行：字体名称输入 ===== -->
+        <Grid Grid.Row="6" Margin="0,5">
             <TextBox Text="{Binding FontName}" 
-                     Watermark="字体名称（可选，如 SimSun）"
-                     ToolTip.Tip="指定字体名称（系统需安装该字体）" />
+                     Watermark="字体名称（可选，如 SimSun、Microsoft YaHei）"
+                     ToolTip.Tip="指定字体名称（系统需安装该字体），留空则自动检测" />
         </Grid>
 
-        <!-- 第6行：字体文件路径选择 -->
-        <Grid ColumnDefinitions="*,Auto" Grid.Row="6" Margin="0,5">
+        <!-- ===== 第7行：字体文件路径选择 ===== -->
+        <Grid ColumnDefinitions="*,Auto" Grid.Row="7" Margin="0,5">
             <TextBox Text="{Binding FontPath}" 
                      Watermark="字体文件路径（可选）"
-                     ToolTip.Tip="直接指定字体文件路径" />
+                     ToolTip.Tip="直接指定字体文件路径（支持 .ttf、.ttc、.otf）" />
             <Button Grid.Column="1" 
                     Content="浏览..." 
                     Command="{Binding SelectFontCommand}" 
                     Margin="5,0,0,0" 
                     Padding="10,2"
-                    ToolTip.Tip="选择字体文件（支持 .ttf、.ttc、.otf）" />
+                    ToolTip.Tip="选择字体文件" />
         </Grid>
 
-        <!-- 第7行：开始翻译按钮 -->
-        <Button Grid.Row="7" 
+        <!-- ===== 第8行：开始翻译按钮 ===== -->
+        <Button Grid.Row="8" 
                 Content="▶ 开始翻译" 
                 Command="{Binding StartCommand}" 
                 IsEnabled="{Binding !IsBusy}" 
@@ -220,22 +219,24 @@
                 FontWeight="Bold"
                 ToolTip.Tip="开始翻译 PDF 文件" />
 
-        <!-- 第8行：进度条区域 -->
-        <StackPanel Grid.Row="8" 
+        <!-- ===== 第9行：进度条区域（根据 ShowProgress 控制可见性）===== -->
+        <StackPanel Grid.Row="9" 
                     Margin="0,5" 
                     IsVisible="{Binding ShowProgress}"
                     Spacing="5">
+            <!-- 进度状态信息 -->
             <TextBlock Text="{Binding ProgressMessage}" 
                        Margin="0,0,0,5"
                        FontStyle="Italic" />
+            <!-- 进度条控件 -->
             <ProgressBar Value="{Binding ProgressValue}" 
                          Maximum="{Binding ProgressMax}" 
                          Height="20"
                          Foreground="#2196F3" />
         </StackPanel>
 
-        <!-- 第9行：日志区域 -->
-        <TextBox Grid.Row="9" 
+        <!-- ===== 第10行：日志区域（固定高度150，可滚动）===== -->
+        <TextBox Grid.Row="10" 
                  Text="{Binding Log}" 
                  IsReadOnly="True" 
                  AcceptsReturn="True" 
@@ -248,6 +249,8 @@
                  Background="#F5F5F5"
                  ToolTip.Tip="操作日志，显示翻译过程中的详细信息" />
 
-        <!-- 第10行：底部留白 -->
+        <!-- ===== 第11行：底部留白（自动填充剩余空间）===== -->
+        <!-- 无需放置任何控件，Grid 会自动处理 -->
+
     </Grid>
 </Window>

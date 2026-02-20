@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="PDFTranslator.GUI.App">
     <Application.Styles>
+        <!-- 使用 Fluent 主题 -->
         <FluentTheme />
     </Application.Styles>
 </Application>

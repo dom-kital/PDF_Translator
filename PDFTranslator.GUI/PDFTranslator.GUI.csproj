@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 资源文件（如图标） -->
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 

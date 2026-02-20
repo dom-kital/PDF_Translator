@@ -10,14 +10,14 @@ E:\PDF_Translator-main\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.d
 E:\PDF_Translator-main\PDFTranslator.Core\obj\Debug\net10.0\refint\PDFTranslator.Core.dll
 E:\PDF_Translator-main\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.pdb
 E:\PDF_Translator-main\PDFTranslator.Core\obj\Debug\net10.0\ref\PDFTranslator.Core.dll
+E:\PDF_Translator\PDFTranslator.Core\bin\Debug\net10.0\PDFTranslator.Core.deps.json
+E:\PDF_Translator\PDFTranslator.Core\bin\Debug\net10.0\PDFTranslator.Core.dll
+E:\PDF_Translator\PDFTranslator.Core\bin\Debug\net10.0\PDFTranslator.Core.pdb
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.csproj.AssemblyReference.cache
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.GeneratedMSBuildEditorConfig.editorconfig
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.AssemblyInfoInputs.cache
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.AssemblyInfo.cs
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.csproj.CoreCompileInputs.cache
-E:\PDF_Translator\PDFTranslator.Core\bin\Debug\net10.0\PDFTranslator.Core.deps.json
-E:\PDF_Translator\PDFTranslator.Core\bin\Debug\net10.0\PDFTranslator.Core.dll
-E:\PDF_Translator\PDFTranslator.Core\bin\Debug\net10.0\PDFTranslator.Core.pdb
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.dll
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\refint\PDFTranslator.Core.dll
 E:\PDF_Translator\PDFTranslator.Core\obj\Debug\net10.0\PDFTranslator.Core.pdb

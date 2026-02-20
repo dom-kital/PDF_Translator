@@ -10,9 +10,15 @@ namespace PDFTranslator.CLI;
 /// </summary>
 public class ConsoleProgressReporter : IProgressReporter
 {
-    private int _lastPercent = -1;
-    private readonly object _lock = new object();
+    private int _lastPercent = -1;      // 上一次报告的百分比，用于避免重复刷新
+    private readonly object _lock = new object(); // 线程锁，防止多线程同时写入控制台
 
+    /// <summary>
+    /// 报告当前进度
+    /// </summary>
+    /// <param name="current">当前已完成的任务数（已处理的页数）</param>
+    /// <param name="total">总任务数（总页数）</param>
+    /// <param name="message">当前状态信息（可选）</param>
     public void Report(int current, int total, string? message = null)
     {
         int percent = (int)((double)current / total * 100);
@@ -22,9 +28,8 @@ public class ConsoleProgressReporter : IProgressReporter
             if (percent != _lastPercent)
             {
                 _lastPercent = percent;
-                int completedBars = percent / 2;
-                string bar = new string('#', completedBars) + 
-                             new string('-', 50 - completedBars);
+                int completedBars = percent / 2; // 每个百分比占0.5个字符，50格满
+                string bar = new string('#', completedBars) + new string('-', 50 - completedBars);
                 
                 Console.Write($"\r进度: [{bar}] {percent}%");
                 
@@ -36,9 +41,13 @@ public class ConsoleProgressReporter : IProgressReporter
         }
     }
 
+    /// <summary>
+    /// 报告完成状态
+    /// </summary>
+    /// <param name="message">完成信息（可选）</param>
     public void Complete(string? message = null)
     {
-        Console.WriteLine();
+        Console.WriteLine(); // 换行
         if (!string.IsNullOrEmpty(message))
         {
             Console.WriteLine(message);
@@ -47,114 +56,40 @@ public class ConsoleProgressReporter : IProgressReporter
 }
 
 /// <summary>
-/// Ollama 配置信息类
+/// 命令行程序主类
 /// </summary>
-public class OllamaConfig
-{
-    public string BaseUrl { get; set; } = "http://localhost:11434";
-    public string Model { get; set; } = "llama3.2";
-    public int TimeoutSeconds { get; set; } = 60;
-
-    /// <summary>
-    /// 从环境变量加载配置（可选）
-    /// </summary>
-    public static OllamaConfig LoadFromEnvironment()
-    {
-        var config = new OllamaConfig();
-        
-        // 从环境变量读取 OLLAMA_HOST（如果存在）
-        string? ollamaHost = Environment.GetEnvironmentVariable("OLLAMA_HOST");
-        if (!string.IsNullOrEmpty(ollamaHost))
-        {
-            // OLLAMA_HOST 可能包含端口，例如 "localhost:11434" 或 "http://192.168.1.100:11434"
-            if (!ollamaHost.StartsWith("http://") && !ollamaHost.StartsWith("https://"))
-            {
-                config.BaseUrl = $"http://{ollamaHost}";
-            }
-            else
-            {
-                config.BaseUrl = ollamaHost;
-            }
-        }
-        
-        // 从环境变量读取 OLLAMA_MODEL（如果存在）
-        string? ollamaModel = Environment.GetEnvironmentVariable("OLLAMA_MODEL");
-        if (!string.IsNullOrEmpty(ollamaModel))
-        {
-            config.Model = ollamaModel;
-        }
-        
-        return config;
-    }
-
-    /// <summary>
-    /// 验证配置是否有效
-    /// </summary>
-    public bool IsValid(out string errorMessage)
-    {
-        errorMessage = "";
-        
-        if (!Uri.IsWellFormedUriString(BaseUrl, UriKind.Absolute))
-        {
-            errorMessage = $"无效的 URL 格式: {BaseUrl}";
-            return false;
-        }
-        
-        if (string.IsNullOrWhiteSpace(Model))
-        {
-            errorMessage = "模型名称不能为空";
-            return false;
-        }
-        
-        if (TimeoutSeconds < 1 || TimeoutSeconds > 300)
-        {
-            errorMessage = "超时时间必须在 1-300 秒之间";
-            return false;
-        }
-        
-        return true;
-    }
-}
-
 class Program
 {
+    /// <summary>
+    /// 程序入口点
+    /// </summary>
+    /// <param name="args">命令行参数数组</param>
     static async Task Main(string[] args)
     {
-        // 加载默认配置（可从环境变量读取）
-        var defaultConfig = OllamaConfig.LoadFromEnvironment();
-        
-        // 当前配置（可从命令行覆盖）
-        string ollamaUrl = defaultConfig.BaseUrl;
-        string model = defaultConfig.Model;
-        int timeoutSeconds = defaultConfig.TimeoutSeconds;
-        
-        bool showProgress = true;
-        bool showConfig = false; // 是否只显示配置而不翻译
-
         // ---------- 参数检查 ----------
         if (args.Length == 0 || (args.Length == 1 && (args[0] == "--help" || args[0] == "-h")))
         {
-            PrintUsage(defaultConfig);
+            PrintUsage();
             return;
         }
 
-        // 特殊命令：显示当前配置
+        // 特殊命令：--config 显示当前配置（需要定义，此处暂略）
         if (args.Length == 1 && args[0] == "--config")
         {
-            ShowCurrentConfig(defaultConfig);
+            // 可以显示默认配置，但为了简化，暂不实现
+            Console.WriteLine("当前配置功能尚未实现，请直接使用参数。");
             return;
         }
 
-        // 解析必需参数
         if (args.Length < 2)
         {
             Console.WriteLine("错误：缺少必需参数。");
-            PrintUsage(defaultConfig);
+            PrintUsage();
             return;
         }
 
-        string inputPath = args[0];
-        string outputPath = args[1];
+        string inputPath = args[0];   // 输入 PDF 文件路径
+        string outputPath = args[1];  // 输出 PDF 文件路径
 
         // 验证输入文件是否存在
         if (!File.Exists(inputPath))
@@ -164,13 +99,19 @@ class Program
             return;
         }
 
-        // 默认值
-        var mode = TranslationMode.Translate;
-        bool translateImages = false;
-        string? fontName = null;
-        string? fontPath = null;
+        // ---------- 设置默认值 ----------
+        var mode = TranslationMode.Translate;      // 默认翻译模式：仅译文
+        bool translateImages = false;               // 默认不翻译图片（预留功能）
+        string model = "llama3.2";                   // 默认 Ollama 模型
+        string? fontName = null;                     // 默认无指定字体名称
+        string? fontPath = null;                     // 默认无指定字体文件
+        string sourceLang = "en";                     // 默认源语言：英语
+        string targetLang = "zh";                     // 默认目标语言：中文
+        string ollamaUrl = "http://localhost:11434";  // 默认 Ollama 地址
+        int timeoutSeconds = 60;                       // 默认超时时间
+        bool showProgress = true;                      // 默认显示进度条
 
-        // 解析可选参数（从第三个参数开始）
+        // ---------- 解析可选参数 ----------
         for (int i = 2; i < args.Length; i++)
         {
             switch (args[i])
@@ -190,16 +131,16 @@ class Program
                     }
                     break;
 
-                // Ollama URL
-                case "--url":
-                    if (i + 1 < args.Length)
-                        ollamaUrl = args[++i];
-                    break;
-
-                // Ollama 模型
+                // 模型名称
                 case "--model":
                     if (i + 1 < args.Length)
                         model = args[++i];
+                    break;
+
+                // Ollama API 地址
+                case "--url":
+                    if (i + 1 < args.Length)
+                        ollamaUrl = args[++i];
                     break;
 
                 // 超时时间（秒）
@@ -220,49 +161,44 @@ class Program
                         fontPath = args[++i];
                     break;
 
+                // 源语言
+                case "--source":
+                case "-s":
+                    if (i + 1 < args.Length)
+                        sourceLang = args[++i];
+                    break;
+
+                // 目标语言
+                case "--target":
+                case "-t":
+                    if (i + 1 < args.Length)
+                        targetLang = args[++i];
+                    break;
+
+                // 图片翻译（预留）
+                case "--translate-images":
+                case "-ti":
+                    if (i + 1 < args.Length && bool.TryParse(args[++i], out bool ti))
+                        translateImages = ti;
+                    break;
+
                 // 禁用进度条
                 case "--no-progress":
                     showProgress = false;
                     break;
 
-                // 显示配置
-                case "--show-config":
-                    showConfig = true;
-                    break;
-
-                // 帮助
+                // 显示帮助
                 case "--help":
                 case "-h":
-                    PrintUsage(defaultConfig);
+                    PrintUsage();
                     return;
 
+                // 未知参数
                 default:
                     Console.WriteLine($"未知参数: {args[i]}");
-                    PrintUsage(defaultConfig);
+                    PrintUsage();
                     return;
             }
-        }
-
-        // 验证 Ollama 配置
-        var currentConfig = new OllamaConfig
-        {
-            BaseUrl = ollamaUrl,
-            Model = model,
-            TimeoutSeconds = timeoutSeconds
-        };
-
-        if (!currentConfig.IsValid(out string configError))
-        {
-            Console.WriteLine($"配置错误: {configError}");
-            Environment.ExitCode = 1;
-            return;
-        }
-
-        // 如果只是显示配置，则输出后退出
-        if (showConfig)
-        {
-            ShowCurrentConfig(currentConfig);
-            return;
         }
 
         // ---------- 验证字体文件路径（如果提供了） ----------
@@ -272,60 +208,82 @@ class Program
             Console.WriteLine("将继续使用其他字体加载方式...");
         }
 
-        // ---------- 显示当前配置 ----------
-        Console.WriteLine("=== Ollama 配置 ===");
-        Console.WriteLine($"API 地址: {ollamaUrl}");
-        Console.WriteLine($"模型名称: {model}");
-        Console.WriteLine($"超时时间: {timeoutSeconds} 秒");
+        // ---------- 显示当前配置摘要 ----------
+        Console.WriteLine("=== PDFTranslator 配置 ===");
+        Console.WriteLine($"输入文件: {inputPath}");
+        Console.WriteLine($"输出文件: {outputPath}");
+        Console.WriteLine($"翻译模式: {(mode == TranslationMode.Translate ? "仅译文" : "双语对照")}");
+        Console.WriteLine($"源语言: {sourceLang} -> 目标语言: {targetLang}");
+        Console.WriteLine($"Ollama 地址: {ollamaUrl}");
+        Console.WriteLine($"模型: {model}");
+        Console.WriteLine($"超时: {timeoutSeconds} 秒");
+        if (!string.IsNullOrEmpty(fontName)) Console.WriteLine($"字体名称: {fontName}");
+        if (!string.IsNullOrEmpty(fontPath)) Console.WriteLine($"字体路径: {fontPath}");
         Console.WriteLine();
 
         // ---------- 配置依赖注入 ----------
         var services = new ServiceCollection();
 
+        // 添加日志服务，输出到控制台
         services.AddLogging(builder =>
         {
             builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Warning); // 减少日志输出，避免干扰进度条
+            builder.SetMinimumLevel(LogLevel.Warning); // 减少干扰，进度条由我们自行控制
         });
 
         // 添加核心翻译服务，使用自定义 Ollama 地址和模型
         services.AddPDFTranslatorCore(ollamaBaseUrl: ollamaUrl, model: model);
 
+        // 构建服务提供程序
         var serviceProvider = services.BuildServiceProvider();
 
+        // 获取所需实例
         var translator = serviceProvider.GetRequiredService<PdfTranslator>();
         var options = serviceProvider.GetRequiredService<TranslationOptions>();
 
+        // 将命令行参数的值设置到配置选项中
         options.Mode = mode;
         options.TranslateImages = translateImages;
         options.FontName = fontName;
         options.FontPath = fontPath;
+        options.SourceLanguage = sourceLang;
+        options.TargetLanguage = targetLang;
 
-        // ---------- 设置进度报告器 ----------
+        // ---------- 设置进度报告器（如果需要） ----------
         if (showProgress)
         {
             translator.SetProgressReporter(new ConsoleProgressReporter());
         }
 
-        // ---------- 测试 Ollama 连接 ----------
+        // ---------- 测试 Ollama 连接（可选，但推荐） ----------
         Console.WriteLine("正在测试 Ollama 连接...");
         try
         {
-            // 尝试调用一个简单的翻译来验证连接
-            var testService = serviceProvider.GetRequiredService<OllamaService>();
-            await testService.TranslateAsync("test", "en", "zh");
-            Console.WriteLine("✓ Ollama 连接成功\n");
+            using var httpClient = new HttpClient();
+            httpClient.BaseAddress = new Uri(ollamaUrl);
+            httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+            var response = await httpClient.GetAsync("api/tags");
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine("✓ Ollama 连接成功");
+            }
+            else
+            {
+                Console.WriteLine($"✗ Ollama 连接失败 (HTTP {response.StatusCode})");
+                Console.WriteLine("是否继续尝试翻译？(y/n)");
+                var key = Console.ReadKey();
+                if (key.KeyChar != 'y' && key.KeyChar != 'Y')
+                {
+                    Console.WriteLine("\n已取消翻译");
+                    return;
+                }
+                Console.WriteLine();
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"✗ Ollama 连接失败: {ex.Message}");
-            Console.WriteLine("请确保:");
-            Console.WriteLine("1. Ollama 服务已启动 (运行 'ollama serve')");
-            Console.WriteLine($"2. 服务地址正确: {ollamaUrl}");
-            Console.WriteLine("3. 防火墙未阻止连接");
-            Console.WriteLine();
+            Console.WriteLine($"✗ Ollama 连接错误: {ex.Message}");
             Console.WriteLine("是否继续尝试翻译？(y/n)");
-            
             var key = Console.ReadKey();
             if (key.KeyChar != 'y' && key.KeyChar != 'Y')
             {
@@ -338,19 +296,7 @@ class Program
         // ---------- 执行翻译 ----------
         try
         {
-            Console.WriteLine($"开始翻译 PDF: {inputPath}");
-            Console.WriteLine($"输出路径: {outputPath}");
-            Console.WriteLine($"模式: {(mode == TranslationMode.Translate ? "仅译文" : "双语对照")}");
-            
-            if (!string.IsNullOrEmpty(fontName))
-                Console.WriteLine($"字体名称: {fontName}");
-            if (!string.IsNullOrEmpty(fontPath))
-                Console.WriteLine($"字体路径: {fontPath}");
-            
-            Console.WriteLine();
-
             await translator.TranslatePdfAsync(inputPath, outputPath);
-
             if (!showProgress)
             {
                 Console.WriteLine("翻译完成！");
@@ -364,89 +310,43 @@ class Program
     }
 
     /// <summary>
-    /// 显示当前 Ollama 配置
+    /// 打印程序使用说明
     /// </summary>
-    static void ShowCurrentConfig(OllamaConfig config)
-    {
-        Console.WriteLine("=== PDFTranslator 当前配置 ===");
-        Console.WriteLine();
-        Console.WriteLine("Ollama 配置:");
-        Console.WriteLine($"  API 地址: {config.BaseUrl}");
-        Console.WriteLine($"  默认模型: {config.Model}");
-        Console.WriteLine($"  超时时间: {config.TimeoutSeconds} 秒");
-        Console.WriteLine();
-        Console.WriteLine("环境变量支持:");
-        Console.WriteLine("  OLLAMA_HOST  - 设置 Ollama 服务地址 (如: localhost:11434)");
-        Console.WriteLine("  OLLAMA_MODEL - 设置默认模型名称 (如: llama3.2)");
-        Console.WriteLine();
-        Console.WriteLine("可用模型列表:");
-        ShowAvailableModels(config.BaseUrl).Wait();
-    }
-
-    /// <summary>
-    /// 显示可用的 Ollama 模型列表
-    /// </summary>
-    static async Task ShowAvailableModels(string baseUrl)
-    {
-        try
-        {
-            using var httpClient = new HttpClient();
-            httpClient.BaseAddress = new Uri(baseUrl);
-            httpClient.Timeout = TimeSpan.FromSeconds(5);
-            
-            var response = await httpClient.GetAsync("api/tags");
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                // 简单解析，实际项目中可以使用 JSON 库
-                Console.WriteLine("  通过 'ollama list' 命令查看完整列表");
-                Console.WriteLine($"  或访问: {baseUrl}/api/tags");
-            }
-            else
-            {
-                Console.WriteLine("  无法获取模型列表，请确保 Ollama 服务正常运行");
-            }
-        }
-        catch
-        {
-            Console.WriteLine("  无法连接到 Ollama 服务，请检查服务是否启动");
-        }
-    }
-
-    static void PrintUsage(OllamaConfig defaultConfig)
+    static void PrintUsage()
     {
         Console.WriteLine("PDFTranslator.CLI - 基于 Ollama 的 PDF 翻译器命令行版");
         Console.WriteLine("==================================================");
         Console.WriteLine();
         Console.WriteLine("用法:");
         Console.WriteLine("  PDFTranslator.CLI <输入PDF> <输出PDF> [选项]");
-        Console.WriteLine("  PDFTranslator.CLI --config                    # 显示当前配置");
         Console.WriteLine();
         Console.WriteLine("必需参数:");
         Console.WriteLine("  <输入PDF>               要翻译的 PDF 文件路径");
         Console.WriteLine("  <输出PDF>               翻译后保存的 PDF 文件路径");
         Console.WriteLine();
-        Console.WriteLine("Ollama 配置选项:");
-        Console.WriteLine($"  --url <地址>             Ollama API 地址 (默认: {defaultConfig.BaseUrl})");
-        Console.WriteLine($"  --model <模型名>         使用的模型 (默认: {defaultConfig.Model})");
-        Console.WriteLine($"  --timeout <秒数>         请求超时时间 (默认: {defaultConfig.TimeoutSeconds})");
-        Console.WriteLine();
         Console.WriteLine("翻译选项:");
-        Console.WriteLine("  --mode, -m <模式>       翻译模式：translate 或 bilingual (默认: translate)");
-        Console.WriteLine("  --font-name <名称>       指定字体名称 (如 SimSun)");
-        Console.WriteLine("  --font-path <路径>       指定字体文件路径");
-        Console.WriteLine("  --no-progress             禁用进度条显示");
-        Console.WriteLine("  --show-config             显示当前配置后退出");
-        Console.WriteLine("  --help, -h               显示此帮助信息");
+        Console.WriteLine("  --mode, -m <模式>       翻译模式：translate 或 bilingual，默认 translate");
+        Console.WriteLine("  --source, -s <代码>     源语言代码 (如 en, zh, ja, fr)，默认 en");
+        Console.WriteLine("  --target, -t <代码>     目标语言代码 (如 zh, en, ja, de)，默认 zh");
         Console.WriteLine();
-        Console.WriteLine("环境变量支持:");
-        Console.WriteLine("  OLLAMA_HOST  - 设置默认 Ollama 地址 (如: localhost:11434)");
-        Console.WriteLine("  OLLAMA_MODEL - 设置默认模型 (如: llama3.2)");
+        Console.WriteLine("Ollama 配置:");
+        Console.WriteLine("  --model <模型名>         使用的模型名称，默认 llama3.2");
+        Console.WriteLine("  --url <地址>             Ollama API 地址，默认 http://localhost:11434");
+        Console.WriteLine("  --timeout <秒数>         请求超时时间，默认 60 秒");
+        Console.WriteLine();
+        Console.WriteLine("字体配置:");
+        Console.WriteLine("  --font-name <名称>       指定字体名称（如 SimSun）");
+        Console.WriteLine("  --font-path <路径>       指定字体文件路径（支持 .ttf/.ttc/.otf）");
+        Console.WriteLine();
+        Console.WriteLine("其他选项:");
+        Console.WriteLine("  --translate-images, -ti <true/false>  是否翻译图片中的文字（预留），默认 false");
+        Console.WriteLine("  --no-progress             禁用进度条显示");
+        Console.WriteLine("  --help, -h               显示此帮助信息");
         Console.WriteLine();
         Console.WriteLine("示例:");
         Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf");
-        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --url http://192.168.1.100:11434 --model qwen2.5");
-        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --mode bilingual --font-name SimSun");
-        Console.WriteLine("  PDFTranslator.CLI --config  # 查看当前配置");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --mode bilingual --source en --target zh");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --model qwen2.5 --font-name SimSun");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --url http://192.168.1.100:11434 --timeout 120");
     }
 }
