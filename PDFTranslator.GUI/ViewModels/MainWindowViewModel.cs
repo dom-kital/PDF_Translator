@@ -1,4 +1,5 @@
 using System;
+using System.IO; // 提供 Path 类
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net.Http;
@@ -46,11 +47,9 @@ public class GuiProgressReporter : IProgressReporter
         _onComplete = onComplete;
     }
 
-    /// <summary>报告当前进度（由 PdfTranslator 调用）</summary>
     public void Report(int current, int total, string? message = null) =>
         _onProgress(current, total, message);
 
-    /// <summary>报告完成状态（由 PdfTranslator 调用）</summary>
     public void Complete(string? message = null) =>
         _onComplete(message);
 }
@@ -64,6 +63,9 @@ public class MainWindowViewModel : ViewModelBase
     private readonly TranslationOptions _options;        // 翻译配置（与 Core 共享）
     private readonly ILogger<MainWindowViewModel> _logger; // 日志记录器
     private IStorageProvider? _storageProvider;          // 文件存储提供程序（由视图设置）
+
+    // ==================== 自动输出文件名相关 ====================
+    private bool _isOutputPathManuallySet; // 记录用户是否手动修改过输出路径
 
     // ==================== Ollama 配置属性 ====================
 
@@ -341,13 +343,13 @@ public class MainWindowViewModel : ViewModelBase
         SelectOutputCommand = ReactiveCommand.CreateFromTask(SelectOutputAsync);
         SelectFontCommand = ReactiveCommand.CreateFromTask(SelectFontAsync);
         StartCommand = ReactiveCommand.CreateFromTask(StartTranslationAsync,
-            this.WhenAnyValue(x => x.IsBusy, x => !x)); // 仅当不忙时可用
+            this.WhenAnyValue(x => x.IsBusy, x => !x));
 
         TestOllamaConnectionCommand = ReactiveCommand.CreateFromTask(TestOllamaConnectionAsync);
         RefreshModelsCommand = ReactiveCommand.CreateFromTask(RefreshModelsAsync);
         SaveOllamaConfigCommand = ReactiveCommand.Create(SaveOllamaConfig);
 
-        // ---------- 从环境变量加载初始配置（可选） ----------
+        // ---------- 从环境变量加载初始配置（可选）----------
         LoadOllamaConfigFromEnvironment();
 
         // ---------- 从 Core 配置同步到视图模型 ----------
@@ -361,6 +363,23 @@ public class MainWindowViewModel : ViewModelBase
         // ---------- 初始化进度条 ----------
         ProgressMax = 100;
         ShowProgress = false;
+
+        // ---------- 监听输入文件变化和模式变化，自动建议输出路径 ----------
+        // 当 InputPath 变化且用户未手动设置输出路径时，生成建议路径
+        this.WhenAnyValue(x => x.InputPath)
+            .Where(path => !string.IsNullOrEmpty(path) && !_isOutputPathManuallySet)
+            .Subscribe(_ => GenerateSuggestedOutputPath());
+
+        // 当 IsBilingual 变化且用户未手动设置输出路径且已有输入文件时，更新建议路径
+        this.WhenAnyValue(x => x.IsBilingual)
+            .Where(_ => !_isOutputPathManuallySet && !string.IsNullOrEmpty(InputPath))
+            .Subscribe(_ => GenerateSuggestedOutputPath());
+
+        // 监听 OutputPath 的手动修改
+        // Skip(1) 跳过初始值，避免在初始化时触发
+        this.WhenAnyValue(x => x.OutputPath)
+            .Skip(1)
+            .Subscribe(_ => _isOutputPathManuallySet = true);
 
         // ---------- 自动测试 Ollama 连接 ----------
         Dispatcher.UIThread.Post(async () => await TestOllamaConnectionAsync());
@@ -404,11 +423,37 @@ public class MainWindowViewModel : ViewModelBase
         return true;
     }
 
+    /// <summary>
+    /// 根据输入文件路径和当前翻译模式生成建议的输出文件路径。
+    /// </summary>
+    private void GenerateSuggestedOutputPath()
+    {
+        if (string.IsNullOrEmpty(InputPath))
+            return;
+
+        try
+        {
+            string dir = Path.GetDirectoryName(InputPath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(InputPath);
+            string ext = Path.GetExtension(InputPath);
+            string suffix = IsBilingual ? "_bilingual" : "_translated";
+            string suggestedPath = Path.Combine(dir, $"{fileNameWithoutExt}{suffix}{ext}");
+            
+            // 只有当建议路径与当前路径不同时才更新，避免触发额外的事件
+            if (OutputPath != suggestedPath)
+            {
+                OutputPath = suggestedPath;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "生成建议输出路径时出错");
+            // 不阻塞用户体验，只是记录警告
+        }
+    }
+
     // ==================== Ollama 相关方法 ====================
 
-    /// <summary>
-    /// 测试 Ollama 连接，并自动获取模型列表。
-    /// </summary>
     private async Task TestOllamaConnectionAsync()
     {
         IsOllamaConnected = false;
@@ -439,9 +484,6 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// 从 Ollama API 获取可用模型列表并更新下拉菜单。
-    /// </summary>
     private async Task RefreshModelsAsync()
     {
         if (!IsOllamaConnected)
@@ -481,7 +523,6 @@ public class MainWindowViewModel : ViewModelBase
                         ModelListStatus = $"找到 {models.Count} 个模型";
                         Log += $"✓ 已获取模型列表: {models.Count} 个模型可用\n";
 
-                        // 如果当前选择的模型不在列表中，自动选择第一个
                         if (!models.Any(m => m.Name == OllamaModel))
                         {
                             SelectedModel = models[0];
@@ -489,7 +530,6 @@ public class MainWindowViewModel : ViewModelBase
                         }
                         else
                         {
-                            // 同步选中项
                             SelectedModel = models.FirstOrDefault(m => m.Name == OllamaModel);
                         }
                     }
@@ -520,9 +560,6 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// 保存 Ollama 配置（仅记录日志，实际可扩展为持久化）。
-    /// </summary>
     private void SaveOllamaConfig()
     {
         Log += $"Ollama 配置已更新:\n  URL: {OllamaUrl}\n  模型: {OllamaModel}\n  超时: {TimeoutSeconds}秒\n";
@@ -533,15 +570,20 @@ public class MainWindowViewModel : ViewModelBase
     private async Task SelectInputAsync()
     {
         if (!CheckStorageProvider()) return;
+
         var files = await _storageProvider!.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择输入 PDF 文件",
             AllowMultiple = false,
             FileTypeFilter = new[] { new FilePickerFileType("PDF 文件") { Patterns = new[] { "*.pdf" } } }
         });
+
         if (files.Count == 1)
         {
             InputPath = files[0].Path.LocalPath;
+            // 重置手动标记，因为选择了全新的输入文件
+            _isOutputPathManuallySet = false;
+            GenerateSuggestedOutputPath(); // 立即生成建议路径
             Log += $"已选择输入文件: {InputPath}\n";
         }
     }
@@ -549,15 +591,20 @@ public class MainWindowViewModel : ViewModelBase
     private async Task SelectOutputAsync()
     {
         if (!CheckStorageProvider()) return;
+
         var file = await _storageProvider!.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "选择输出 PDF 文件",
             DefaultExtension = "pdf",
-            FileTypeChoices = new[] { new FilePickerFileType("PDF 文件") { Patterns = new[] { "*.pdf" } } }
+            FileTypeChoices = new[] { new FilePickerFileType("PDF 文件") { Patterns = new[] { "*.pdf" } } },
+            SuggestedFileName = Path.GetFileName(OutputPath) // 使用当前输出路径的文件名作为建议
         });
+
         if (file != null)
         {
             OutputPath = file.Path.LocalPath;
+            // 用户通过浏览选择了输出文件，视为手动设置
+            _isOutputPathManuallySet = true;
             Log += $"已选择输出文件: {OutputPath}\n";
         }
     }
@@ -565,6 +612,7 @@ public class MainWindowViewModel : ViewModelBase
     private async Task SelectFontAsync()
     {
         if (!CheckStorageProvider()) return;
+
         var files = await _storageProvider!.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择字体文件",
@@ -574,6 +622,7 @@ public class MainWindowViewModel : ViewModelBase
                 new FilePickerFileType("字体文件") { Patterns = new[] { "*.ttf", "*.ttc", "*.otf" } }
             }
         });
+
         if (files.Count == 1)
         {
             FontPath = files[0].Path.LocalPath;
@@ -604,13 +653,11 @@ public class MainWindowViewModel : ViewModelBase
             }
         }
 
-        // 进入忙碌状态
         IsBusy = true;
         ShowProgress = true;
         ProgressValue = 0;
         ProgressMessage = "准备中...";
 
-        // 记录当前配置到日志
         Log += "开始翻译...\n";
         Log += $"Ollama URL: {OllamaUrl}\n";
         Log += $"模型: {OllamaModel}\n";
@@ -619,12 +666,10 @@ public class MainWindowViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(FontName)) Log += $"字体名称: {FontName}\n";
         if (!string.IsNullOrEmpty(FontPath)) Log += $"字体路径: {FontPath}\n";
 
-        // 将当前 UI 设置同步到 Core 配置
         _options.Model = OllamaModel;
         _options.SourceLanguage = SourceLanguage;
         _options.TargetLanguage = TargetLanguage;
 
-        // 创建进度报告器
         var reporter = new GuiProgressReporter(
             onProgress: (current, total, msg) => Dispatcher.UIThread.Post(() =>
             {

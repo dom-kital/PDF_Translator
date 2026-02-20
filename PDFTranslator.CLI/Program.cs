@@ -10,29 +10,20 @@ namespace PDFTranslator.CLI;
 /// </summary>
 public class ConsoleProgressReporter : IProgressReporter
 {
-    private int _lastPercent = -1;      // 上一次报告的百分比，用于避免重复刷新
-    private readonly object _lock = new object(); // 线程锁，防止多线程同时写入控制台
+    private int _lastPercent = -1;
+    private readonly object _lock = new object();
 
-    /// <summary>
-    /// 报告当前进度
-    /// </summary>
-    /// <param name="current">当前已完成的任务数（已处理的页数）</param>
-    /// <param name="total">总任务数（总页数）</param>
-    /// <param name="message">当前状态信息（可选）</param>
     public void Report(int current, int total, string? message = null)
     {
         int percent = (int)((double)current / total * 100);
-        
         lock (_lock)
         {
             if (percent != _lastPercent)
             {
                 _lastPercent = percent;
-                int completedBars = percent / 2; // 每个百分比占0.5个字符，50格满
+                int completedBars = percent / 2;
                 string bar = new string('#', completedBars) + new string('-', 50 - completedBars);
-                
                 Console.Write($"\r进度: [{bar}] {percent}%");
-                
                 if (!string.IsNullOrEmpty(message))
                 {
                     Console.Write($" - {message}");
@@ -41,13 +32,9 @@ public class ConsoleProgressReporter : IProgressReporter
         }
     }
 
-    /// <summary>
-    /// 报告完成状态
-    /// </summary>
-    /// <param name="message">完成信息（可选）</param>
     public void Complete(string? message = null)
     {
-        Console.WriteLine(); // 换行
+        Console.WriteLine();
         if (!string.IsNullOrEmpty(message))
         {
             Console.WriteLine(message);
@@ -56,40 +43,141 @@ public class ConsoleProgressReporter : IProgressReporter
 }
 
 /// <summary>
-/// 命令行程序主类
+/// Ollama 配置信息类
 /// </summary>
+public class OllamaConfig
+{
+    public string BaseUrl { get; set; } = "http://localhost:11434";
+    public string Model { get; set; } = "llama3.2";
+    public int TimeoutSeconds { get; set; } = 60;
+
+    public static OllamaConfig LoadFromEnvironment()
+    {
+        var config = new OllamaConfig();
+        string? ollamaHost = Environment.GetEnvironmentVariable("OLLAMA_HOST");
+        if (!string.IsNullOrEmpty(ollamaHost))
+        {
+            if (!ollamaHost.StartsWith("http://") && !ollamaHost.StartsWith("https://"))
+            {
+                config.BaseUrl = $"http://{ollamaHost}";
+            }
+            else
+            {
+                config.BaseUrl = ollamaHost;
+            }
+        }
+        string? ollamaModel = Environment.GetEnvironmentVariable("OLLAMA_MODEL");
+        if (!string.IsNullOrEmpty(ollamaModel))
+        {
+            config.Model = ollamaModel;
+        }
+        return config;
+    }
+
+    public bool IsValid(out string errorMessage)
+    {
+        errorMessage = "";
+        if (!Uri.IsWellFormedUriString(BaseUrl, UriKind.Absolute))
+        {
+            errorMessage = $"无效的 URL 格式: {BaseUrl}";
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(Model))
+        {
+            errorMessage = "模型名称不能为空";
+            return false;
+        }
+        if (TimeoutSeconds < 1 || TimeoutSeconds > 300)
+        {
+            errorMessage = "超时时间必须在 1-300 秒之间";
+            return false;
+        }
+        return true;
+    }
+}
+
 class Program
 {
-    /// <summary>
-    /// 程序入口点
-    /// </summary>
-    /// <param name="args">命令行参数数组</param>
     static async Task Main(string[] args)
     {
-        // ---------- 参数检查 ----------
-        if (args.Length == 0 || (args.Length == 1 && (args[0] == "--help" || args[0] == "-h")))
+        // 加载默认配置
+        var defaultConfig = OllamaConfig.LoadFromEnvironment();
+
+        // 初始化变量
+        string? inputPath = null;
+        string? outputPath = null;
+        bool autoOutput = false;
+        var mode = TranslationMode.Translate;
+        bool translateImages = false;
+        string model = defaultConfig.Model;
+        string ollamaUrl = defaultConfig.BaseUrl;
+        int timeoutSeconds = defaultConfig.TimeoutSeconds;
+        string? fontName = null;
+        string? fontPath = null;
+        string sourceLang = "en";
+        string targetLang = "zh";
+        bool showProgress = true;
+        bool showConfig = false;
+
+        // 先简单解析参数，识别 --auto-output 和 --help 等
+        List<string> remainingArgs = new List<string>();
+        for (int i = 0; i < args.Length; i++)
         {
-            PrintUsage();
+            if (args[i] == "--auto-output" || args[i] == "-a")
+            {
+                autoOutput = true;
+            }
+            else if (args[i] == "--help" || args[i] == "-h")
+            {
+                PrintUsage(defaultConfig);
+                return;
+            }
+            else if (args[i] == "--config")
+            {
+                showConfig = true;
+                // 继续收集剩余参数，但后面会特殊处理
+                remainingArgs.Add(args[i]);
+            }
+            else
+            {
+                remainingArgs.Add(args[i]);
+            }
+        }
+
+        // 现在处理剩余参数（不含已识别的特殊命令）
+        if (showConfig)
+        {
+            // 如果只显示配置，需要配置可能从环境变量来，但无需输入文件等
+            if (remainingArgs.Count == 1) // 只有 --config
+            {
+                ShowCurrentConfig(defaultConfig);
+                return;
+            }
+            // 否则继续，可能后面还有参数，但为了简化，我们先支持纯 --config
+            // 如果有其他参数，则按正常流程
+        }
+
+        // 确定位置参数数量
+        int positionalCount = autoOutput ? 1 : 2;
+        if (remainingArgs.Count < positionalCount)
+        {
+            Console.WriteLine($"错误：参数不足。需要 {(autoOutput ? "1个输入文件" : "2个参数（输入文件和输出文件）")}。");
+            PrintUsage(defaultConfig);
             return;
         }
 
-        // 特殊命令：--config 显示当前配置（需要定义，此处暂略）
-        if (args.Length == 1 && args[0] == "--config")
+        // 解析位置参数
+        inputPath = remainingArgs[0];
+        if (!autoOutput)
         {
-            // 可以显示默认配置，但为了简化，暂不实现
-            Console.WriteLine("当前配置功能尚未实现，请直接使用参数。");
-            return;
+            outputPath = remainingArgs[1];
+            // 移除已使用的两个参数
+            remainingArgs = remainingArgs.Skip(2).ToList();
         }
-
-        if (args.Length < 2)
+        else
         {
-            Console.WriteLine("错误：缺少必需参数。");
-            PrintUsage();
-            return;
+            remainingArgs = remainingArgs.Skip(1).ToList();
         }
-
-        string inputPath = args[0];   // 输入 PDF 文件路径
-        string outputPath = args[1];  // 输出 PDF 文件路径
 
         // 验证输入文件是否存在
         if (!File.Exists(inputPath))
@@ -99,29 +187,16 @@ class Program
             return;
         }
 
-        // ---------- 设置默认值 ----------
-        var mode = TranslationMode.Translate;      // 默认翻译模式：仅译文
-        bool translateImages = false;               // 默认不翻译图片（预留功能）
-        string model = "llama3.2";                   // 默认 Ollama 模型
-        string? fontName = null;                     // 默认无指定字体名称
-        string? fontPath = null;                     // 默认无指定字体文件
-        string sourceLang = "en";                     // 默认源语言：英语
-        string targetLang = "zh";                     // 默认目标语言：中文
-        string ollamaUrl = "http://localhost:11434";  // 默认 Ollama 地址
-        int timeoutSeconds = 60;                       // 默认超时时间
-        bool showProgress = true;                      // 默认显示进度条
-
-        // ---------- 解析可选参数 ----------
-        for (int i = 2; i < args.Length; i++)
+        // 解析剩余的可选参数
+        for (int i = 0; i < remainingArgs.Count; i++)
         {
-            switch (args[i])
+            switch (remainingArgs[i])
             {
-                // 翻译模式
                 case "--mode":
                 case "-m":
-                    if (i + 1 < args.Length)
+                    if (i + 1 < remainingArgs.Count)
                     {
-                        var modeArg = args[++i].ToLower();
+                        var modeArg = remainingArgs[++i].ToLower();
                         mode = modeArg switch
                         {
                             "bilingual" => TranslationMode.Bilingual,
@@ -131,84 +206,107 @@ class Program
                     }
                     break;
 
-                // 模型名称
                 case "--model":
-                    if (i + 1 < args.Length)
-                        model = args[++i];
+                    if (i + 1 < remainingArgs.Count)
+                        model = remainingArgs[++i];
                     break;
 
-                // Ollama API 地址
                 case "--url":
-                    if (i + 1 < args.Length)
-                        ollamaUrl = args[++i];
+                    if (i + 1 < remainingArgs.Count)
+                        ollamaUrl = remainingArgs[++i];
                     break;
 
-                // 超时时间（秒）
                 case "--timeout":
-                    if (i + 1 < args.Length && int.TryParse(args[++i], out int timeout))
+                    if (i + 1 < remainingArgs.Count && int.TryParse(remainingArgs[++i], out int timeout))
                         timeoutSeconds = timeout;
                     break;
 
-                // 字体名称
                 case "--font-name":
-                    if (i + 1 < args.Length)
-                        fontName = args[++i];
+                    if (i + 1 < remainingArgs.Count)
+                        fontName = remainingArgs[++i];
                     break;
 
-                // 字体文件路径
                 case "--font-path":
-                    if (i + 1 < args.Length)
-                        fontPath = args[++i];
+                    if (i + 1 < remainingArgs.Count)
+                        fontPath = remainingArgs[++i];
                     break;
 
-                // 源语言
                 case "--source":
                 case "-s":
-                    if (i + 1 < args.Length)
-                        sourceLang = args[++i];
+                    if (i + 1 < remainingArgs.Count)
+                        sourceLang = remainingArgs[++i];
                     break;
 
-                // 目标语言
                 case "--target":
                 case "-t":
-                    if (i + 1 < args.Length)
-                        targetLang = args[++i];
+                    if (i + 1 < remainingArgs.Count)
+                        targetLang = remainingArgs[++i];
                     break;
 
-                // 图片翻译（预留）
                 case "--translate-images":
                 case "-ti":
-                    if (i + 1 < args.Length && bool.TryParse(args[++i], out bool ti))
+                    if (i + 1 < remainingArgs.Count && bool.TryParse(remainingArgs[++i], out bool ti))
                         translateImages = ti;
                     break;
 
-                // 禁用进度条
                 case "--no-progress":
                     showProgress = false;
                     break;
 
-                // 显示帮助
-                case "--help":
-                case "-h":
-                    PrintUsage();
-                    return;
-
-                // 未知参数
                 default:
-                    Console.WriteLine($"未知参数: {args[i]}");
-                    PrintUsage();
+                    Console.WriteLine($"未知参数: {remainingArgs[i]}");
+                    PrintUsage(defaultConfig);
                     return;
             }
         }
 
-        // ---------- 验证字体文件路径（如果提供了） ----------
+        // 如果启用 autoOutput，生成输出路径
+        if (autoOutput)
+        {
+            string dir = Path.GetDirectoryName(inputPath) ?? Directory.GetCurrentDirectory();
+            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(inputPath);
+            string ext = Path.GetExtension(inputPath);
+            string suffix = mode == TranslationMode.Bilingual ? "_bilingual" : "_translated";
+            outputPath = Path.Combine(dir, $"{fileNameWithoutExt}{suffix}{ext}");
+            Console.WriteLine($"自动生成输出文件: {outputPath}");
+        }
+
+        // 验证输出路径是否有效（目录存在？可以尝试创建）
+        try
+        {
+            string? outDir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
+            {
+                Directory.CreateDirectory(outDir);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"警告：无法创建输出目录 - {ex.Message}");
+        }
+
+        // 验证字体文件路径（如果提供）
         if (!string.IsNullOrEmpty(fontPath) && !File.Exists(fontPath))
         {
             Console.WriteLine($"警告：指定的字体文件不存在 - {fontPath}");
             Console.WriteLine("将继续使用其他字体加载方式...");
         }
 
-        // ---------- 显示当前配置摘要 ----------
+        // 验证 Ollama 配置
+        var currentConfig = new OllamaConfig
+        {
+            BaseUrl = ollamaUrl,
+            Model = model,
+            TimeoutSeconds = timeoutSeconds
+        };
+        if (!currentConfig.IsValid(out string configError))
+        {
+            Console.WriteLine($"配置错误: {configError}");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        // 显示配置摘要
         Console.WriteLine("=== PDFTranslator 配置 ===");
         Console.WriteLine($"输入文件: {inputPath}");
         Console.WriteLine($"输出文件: {outputPath}");
@@ -221,27 +319,19 @@ class Program
         if (!string.IsNullOrEmpty(fontPath)) Console.WriteLine($"字体路径: {fontPath}");
         Console.WriteLine();
 
-        // ---------- 配置依赖注入 ----------
+        // 配置依赖注入
         var services = new ServiceCollection();
-
-        // 添加日志服务，输出到控制台
         services.AddLogging(builder =>
         {
             builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Warning); // 减少干扰，进度条由我们自行控制
+            builder.SetMinimumLevel(LogLevel.Warning);
         });
-
-        // 添加核心翻译服务，使用自定义 Ollama 地址和模型
         services.AddPDFTranslatorCore(ollamaBaseUrl: ollamaUrl, model: model);
 
-        // 构建服务提供程序
         var serviceProvider = services.BuildServiceProvider();
-
-        // 获取所需实例
         var translator = serviceProvider.GetRequiredService<PdfTranslator>();
         var options = serviceProvider.GetRequiredService<TranslationOptions>();
 
-        // 将命令行参数的值设置到配置选项中
         options.Mode = mode;
         options.TranslateImages = translateImages;
         options.FontName = fontName;
@@ -249,13 +339,13 @@ class Program
         options.SourceLanguage = sourceLang;
         options.TargetLanguage = targetLang;
 
-        // ---------- 设置进度报告器（如果需要） ----------
+        // 设置进度报告器
         if (showProgress)
         {
             translator.SetProgressReporter(new ConsoleProgressReporter());
         }
 
-        // ---------- 测试 Ollama 连接（可选，但推荐） ----------
+        // 测试 Ollama 连接
         Console.WriteLine("正在测试 Ollama 连接...");
         try
         {
@@ -293,7 +383,13 @@ class Program
             Console.WriteLine();
         }
 
-        // ---------- 执行翻译 ----------
+        // 执行翻译
+        if (string.IsNullOrEmpty(outputPath))
+        {
+            Console.WriteLine("错误：输出文件路径为空，无法进行翻译。");
+            Environment.ExitCode = 1;
+            return;
+        }
         try
         {
             await translator.TranslatePdfAsync(inputPath, outputPath);
@@ -310,19 +406,39 @@ class Program
     }
 
     /// <summary>
-    /// 打印程序使用说明
+    /// 显示当前 Ollama 配置
     /// </summary>
-    static void PrintUsage()
+    static void ShowCurrentConfig(OllamaConfig config)
+    {
+        Console.WriteLine("=== PDFTranslator 当前配置 ===");
+        Console.WriteLine();
+        Console.WriteLine("Ollama 配置:");
+        Console.WriteLine($"  API 地址: {config.BaseUrl}");
+        Console.WriteLine($"  默认模型: {config.Model}");
+        Console.WriteLine($"  超时时间: {config.TimeoutSeconds} 秒");
+        Console.WriteLine();
+        Console.WriteLine("环境变量支持:");
+        Console.WriteLine("  OLLAMA_HOST  - 设置 Ollama 服务地址 (如: localhost:11434)");
+        Console.WriteLine("  OLLAMA_MODEL - 设置默认模型名称 (如: llama3.2)");
+    }
+
+    static void PrintUsage(OllamaConfig defaultConfig)
     {
         Console.WriteLine("PDFTranslator.CLI - 基于 Ollama 的 PDF 翻译器命令行版");
         Console.WriteLine("==================================================");
         Console.WriteLine();
         Console.WriteLine("用法:");
-        Console.WriteLine("  PDFTranslator.CLI <输入PDF> <输出PDF> [选项]");
+        Console.WriteLine("  PDFTranslator.CLI <输入PDF> [输出PDF] [选项]");
+        Console.WriteLine("  PDFTranslator.CLI <输入PDF> --auto-output [选项]  # 自动生成输出文件名");
+        Console.WriteLine("  PDFTranslator.CLI --config                           # 显示当前配置");
         Console.WriteLine();
         Console.WriteLine("必需参数:");
         Console.WriteLine("  <输入PDF>               要翻译的 PDF 文件路径");
-        Console.WriteLine("  <输出PDF>               翻译后保存的 PDF 文件路径");
+        Console.WriteLine("  [输出PDF]                可选，若省略则需使用 --auto-output 自动生成");
+        Console.WriteLine();
+        Console.WriteLine("自动输出选项:");
+        Console.WriteLine("  --auto-output, -a       根据输入文件名和翻译模式自动生成输出文件名");
+        Console.WriteLine("                           仅译文模式添加 _translated 后缀，双语模式添加 _bilingual 后缀");
         Console.WriteLine();
         Console.WriteLine("翻译选项:");
         Console.WriteLine("  --mode, -m <模式>       翻译模式：translate 或 bilingual，默认 translate");
@@ -330,9 +446,9 @@ class Program
         Console.WriteLine("  --target, -t <代码>     目标语言代码 (如 zh, en, ja, de)，默认 zh");
         Console.WriteLine();
         Console.WriteLine("Ollama 配置:");
-        Console.WriteLine("  --model <模型名>         使用的模型名称，默认 llama3.2");
-        Console.WriteLine("  --url <地址>             Ollama API 地址，默认 http://localhost:11434");
-        Console.WriteLine("  --timeout <秒数>         请求超时时间，默认 60 秒");
+        Console.WriteLine($"  --model <模型名>         使用的模型名称，默认 {defaultConfig.Model}");
+        Console.WriteLine($"  --url <地址>             Ollama API 地址，默认 {defaultConfig.BaseUrl}");
+        Console.WriteLine($"  --timeout <秒数>         请求超时时间，默认 {defaultConfig.TimeoutSeconds} 秒");
         Console.WriteLine();
         Console.WriteLine("字体配置:");
         Console.WriteLine("  --font-name <名称>       指定字体名称（如 SimSun）");
@@ -344,9 +460,8 @@ class Program
         Console.WriteLine("  --help, -h               显示此帮助信息");
         Console.WriteLine();
         Console.WriteLine("示例:");
-        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf");
-        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --mode bilingual --source en --target zh");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf --auto-output");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf --auto-output --mode bilingual --source en --target zh");
         Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --model qwen2.5 --font-name SimSun");
-        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --url http://192.168.1.100:11434 --timeout 120");
     }
 }
