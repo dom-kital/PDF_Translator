@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace PDFTranslator.Core;
 
 /// <summary>
@@ -9,7 +11,7 @@ public class TranslationOptions
     // ========== Ollama 模型配置 ==========
 
     /// <summary>
-    /// Ollama 使用的模型名称，例如 "llama3.2"、"qwen2.5"、"llama3.2-vision" 等。
+    /// Ollama 使用的模型名称，例如 "llama3.2"、"qwen2.5"、"deepseek-r1" 等。
     /// 默认值为 "llama3.2"，用户可在 GUI 或 CLI 中修改。
     /// </summary>
     public string Model { get; set; } = "llama3.2";
@@ -59,6 +61,102 @@ public class TranslationOptions
     /// 与 SourceLanguage 类似，模型需支持目标语言才能获得较高质量的翻译。
     /// </summary>
     public string TargetLanguage { get; set; } = "zh";
+
+    // ========== 页面范围设置 ==========
+
+    /// <summary>
+    /// 页面范围选择模式：All（全部页面）、Range（页码范围）、Single（单个页面）
+    /// 默认值为 All。
+    /// </summary>
+    public PageRangeMode PageRangeMode { get; set; } = PageRangeMode.All;
+
+    /// <summary>
+    /// 页码范围（例如 "1-5,7,9-11"）
+    /// 当 PageRangeMode 为 Range 时有效
+    /// </summary>
+    public string? PageRange { get; set; }
+
+    /// <summary>
+    /// 单个页面页码
+    /// 当 PageRangeMode 为 Single 时有效
+    /// </summary>
+    public int? SinglePage { get; set; }
+
+    /// <summary>
+    /// 解析后的页面列表（由 PdfTranslator 内部使用）
+    /// </summary>
+    public List<int>? ParsedPages { get; set; }
+
+    // ========== 流式处理配置 ==========
+
+    /// <summary>
+    /// 是否使用流式处理模式。
+    /// 流式处理模式下，程序会逐页处理 PDF，任何时候只有一页在内存中。
+    /// 这可以大幅降低内存使用，特别适合处理大型 PDF 文件。
+    /// 默认值为 true。
+    /// </summary>
+    public bool UseStreamingMode { get; set; } = true;
+
+    /// <summary>
+    /// 每批处理的文本块数量。
+    /// 将一页中的文本块分成多个批次处理，每批处理完成后会进行垃圾回收。
+    /// 较小的值可以降低内存峰值，但会略微降低处理速度。
+    /// 默认值为 20，取值范围建议 5-50。
+    /// </summary>
+    public int TextBlockBatchSize { get; set; } = 20;
+
+    /// <summary>
+    /// 每页最大处理的文本块数量。
+    /// 当一页的文本块数量超过此值时，程序将只处理最重要的部分（按文本长度排序）。
+    /// 这可以避免因页面包含大量小文本块而导致的内存暴增。
+    /// 默认值为 100，取值范围建议 50-200。
+    /// </summary>
+    public int MaxTextBlocksPerPage { get; set; } = 100;
+
+    /// <summary>
+    /// 单个文本块的最大字符数。
+    /// 超过此长度的文本块将被截断，避免过长的翻译请求。
+    /// 默认值为 500，取值范围建议 200-1000。
+    /// </summary>
+    public int MaxTextBlockLength { get; set; } = 500;
+
+    /// <summary>
+    /// 是否在每页处理后强制进行垃圾回收。
+    /// 启用此选项可以更积极地释放内存，但会增加 CPU 开销。
+    /// 默认值为 true。
+    /// </summary>
+    public bool ForceGCAfterPage { get; set; } = true;
+
+    /// <summary>
+    /// 内存警告阈值（MB）。
+    /// 当程序占用内存超过此值时，会记录警告日志并尝试强制垃圾回收。
+    /// 默认值为 800 MB。
+    /// </summary>
+    public long MemoryWarningThresholdMB { get; set; } = 800;
+
+    /// <summary>
+    /// 内存临界阈值（MB）。
+    /// 当程序占用内存超过此值时，会停止处理并建议用户重启。
+    /// 默认值为 1500 MB。
+    /// </summary>
+    public long MemoryCriticalThresholdMB { get; set; } = 1500;
+
+    // ========== Ollama API 配置 ==========
+
+    /// <summary>
+    /// Ollama API 版本: "chat" 或 "generate"
+    /// chat: 使用 /api/chat 端点（新版 Ollama 推荐）
+    /// generate: 使用 /api/generate 端点（兼容旧版）
+    /// 默认值为 "chat"，如果遇到 404 错误可以尝试切换为 "generate"
+    /// </summary>
+    public string OllamaApiVersion { get; set; } = "chat";
+
+    /// <summary>
+    /// 是否自动检测 API 版本。
+    /// 如果设为 true，程序会先尝试 chat API，失败后自动切换到 generate API。
+    /// 默认值为 true。
+    /// </summary>
+    public bool AutoDetectApiVersion { get; set; } = true;
 }
 
 /// <summary>
@@ -71,4 +169,19 @@ public enum TranslationMode
 
     /// <summary>双语对照模式：保留原文，在原文下方添加蓝色半透明译文，便于对比学习。</summary>
     Bilingual
+}
+
+/// <summary>
+/// 页面范围模式枚举，定义三种可选的页面选择方式。
+/// </summary>
+public enum PageRangeMode
+{
+    /// <summary>全部页面</summary>
+    All,
+
+    /// <summary>页码范围（如 "1-5,7,9-11"）</summary>
+    Range,
+
+    /// <summary>单个页面</summary>
+    Single
 }

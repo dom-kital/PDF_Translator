@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PDFTranslator.Core;
+using PDFTranslator.GUI.Logging;
 using PDFTranslator.GUI.ViewModels;
 using PDFTranslator.GUI.Views;
 using System;
@@ -15,29 +16,17 @@ namespace PDFTranslator.GUI;
 /// </summary>
 public partial class App : Application
 {
-    /// <summary>
-    /// 服务提供程序，用于在应用程序中获取依赖注入的服务实例。
-    /// 声明为可空，因为在初始化完成前可能为 null。
-    /// </summary>
     private IServiceProvider? _serviceProvider;
+    private MainWindowViewModel? _mainViewModel;
 
-    /// <summary>
-    /// 初始化应用程序的 XAML 资源。
-    /// 此方法在应用程序启动时自动调用。
-    /// </summary>
     public override void Initialize()
     {
-        // 加载 App.axaml 文件中定义的样式和资源
         AvaloniaXamlLoader.Load(this);
-        
 #if DEBUG
         Console.WriteLine("✓ App.axaml 资源加载完成");
 #endif
     }
 
-    /// <summary>
-    /// 框架初始化完成后调用，这是设置依赖注入和主窗口的主要位置。
-    /// </summary>
     public override void OnFrameworkInitializationCompleted()
     {
 #if DEBUG
@@ -46,27 +35,28 @@ public partial class App : Application
 
         try
         {
-            // ---------- 1. 配置依赖注入容器 ----------
+            // ---------- 1. 先创建 ViewModel（用于接收日志回调）----------
+            _mainViewModel = new MainWindowViewModel();
+
+            // ---------- 2. 配置依赖注入容器 ----------
             var services = new ServiceCollection();
 
-            // ---------- 2. 配置日志服务 ----------
+            // ---------- 3. 配置日志服务 ----------
             ConfigureLogging(services);
 
-            // ---------- 3. 配置核心翻译服务 ----------
+            // ---------- 4. 配置核心翻译服务 ----------
             ConfigureCoreServices(services);
 
-            // ---------- 4. 配置视图模型 ----------
-            ConfigureViewModels(services);
+            // ---------- 5. 注册 ViewModel 为单例 ----------
+            services.AddSingleton(_mainViewModel);
 
-            // ---------- 5. 构建服务提供程序 ----------
+            // ---------- 6. 构建服务提供程序 ----------
             _serviceProvider = services.BuildServiceProvider();
 
-            // ---------- 6. 验证关键服务是否可解析（仅调试模式） ----------
-#if DEBUG
-            ValidateServices();
-#endif
+            // ---------- 7. 初始化 ViewModel 的依赖注入服务 ----------
+            InitializeViewModelServices();
 
-            // ---------- 7. 根据应用程序生命周期类型设置主窗口 ----------
+            // ---------- 8. 根据应用程序生命周期类型设置主窗口 ----------
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 SetupDesktopApplication(desktop);
@@ -84,7 +74,6 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            // 捕获初始化过程中的致命错误
             HandleFatalError(ex);
         }
     }
@@ -96,19 +85,26 @@ public partial class App : Application
     {
         services.AddLogging(builder =>
         {
-            builder.AddConsole(); // 控制台输出（对调试很有用）
+            // 添加控制台日志
+            builder.AddConsole();
+
 #if DEBUG
+            // 调试模式下输出详细信息
             builder.SetMinimumLevel(LogLevel.Debug);
 #else
             builder.SetMinimumLevel(LogLevel.Information);
 #endif
+
             // 过滤掉无关的日志
             builder.AddFilter("Microsoft", LogLevel.Warning);
             builder.AddFilter("System", LogLevel.Warning);
         });
 
+        // 注意：自定义日志提供程序需要在服务构建后通过服务提供程序添加
+        // 这里不能直接添加，因为 _mainViewModel 还没有通过依赖注入获取
+
 #if DEBUG
-        Console.WriteLine("  ✓ 日志服务已配置");
+        Console.WriteLine("  ✓ 基础日志服务已配置");
 #endif
     }
 
@@ -129,51 +125,42 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// 配置视图模型。
+    /// 初始化 ViewModel 的依赖注入服务
     /// </summary>
-    private void ConfigureViewModels(IServiceCollection services)
+    private void InitializeViewModelServices()
     {
-        // 主窗口视图模型注册为瞬态，每次请求都创建新实例
-        services.AddTransient<MainWindowViewModel>();
+        if (_serviceProvider == null || _mainViewModel == null)
+            return;
 
-        // 可在此添加其他视图模型
-        // services.AddTransient<SettingsViewModel>();
+        // 获取所需的依赖注入服务
+        var translator = _serviceProvider.GetRequiredService<PdfTranslator>();
+        var options = _serviceProvider.GetRequiredService<TranslationOptions>();
+        var logger = _serviceProvider.GetRequiredService<ILogger<MainWindowViewModel>>();
 
-#if DEBUG
-        Console.WriteLine("  ✓ 视图模型已注册");
-#endif
+        // 调用 ViewModel 的初始化方法
+        _mainViewModel.InitializeServices(translator, options, logger);
+        
+        // 现在可以添加自定义日志提供程序，因为 ViewModel 已经初始化
+        AddCustomLoggerProvider();
     }
 
     /// <summary>
-    /// 验证关键服务是否可解析（仅调试模式）。
+    /// 添加自定义日志提供程序，将日志输出到 GUI
     /// </summary>
-    private void ValidateServices()
+    private void AddCustomLoggerProvider()
     {
-        try
-        {
-            var translator = _serviceProvider!.GetService<PdfTranslator>();
-            var options = _serviceProvider!.GetService<TranslationOptions>();
-            var viewModel = _serviceProvider!.GetService<MainWindowViewModel>();
+        if (_serviceProvider == null || _mainViewModel == null)
+            return;
 
-            if (translator == null)
-                Console.WriteLine("  ⚠️ 警告: PdfTranslator 服务解析失败");
-            else
-                Console.WriteLine("  ✓ PdfTranslator 服务可解析");
-
-            if (options == null)
-                Console.WriteLine("  ⚠️ 警告: TranslationOptions 服务解析失败");
-            else
-                Console.WriteLine("  ✓ TranslationOptions 服务可解析");
-
-            if (viewModel == null)
-                Console.WriteLine("  ⚠️ 警告: MainWindowViewModel 服务解析失败");
-            else
-                Console.WriteLine("  ✓ MainWindowViewModel 服务可解析");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"  ❌ 服务验证失败: {ex.Message}");
-        }
+        // 获取日志工厂
+        var loggerFactory = _serviceProvider.GetRequiredService<ILoggerFactory>();
+        
+        // 添加自定义提供程序
+        loggerFactory.AddProvider(new CustomLoggerProvider(_mainViewModel));
+        
+#if DEBUG
+        Console.WriteLine("  ✓ 自定义日志提供程序已添加");
+#endif
     }
 
     /// <summary>
@@ -181,12 +168,11 @@ public partial class App : Application
     /// </summary>
     private void SetupDesktopApplication(IClassicDesktopStyleApplicationLifetime desktop)
     {
-        if (_serviceProvider == null)
-            throw new InvalidOperationException("服务提供程序未初始化");
+        if (_serviceProvider == null || _mainViewModel == null)
+            throw new InvalidOperationException("服务提供程序或 ViewModel 未初始化");
 
         var mainWindow = new MainWindow();
-        var viewModel = _serviceProvider.GetRequiredService<MainWindowViewModel>();
-        mainWindow.DataContext = viewModel;
+        mainWindow.DataContext = _mainViewModel;
         desktop.MainWindow = mainWindow;
 
         // 订阅应用程序退出事件
@@ -198,7 +184,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// 处理致命错误，在应用程序初始化失败时记录错误并退出。
+    /// 处理致命错误，记录并退出。
     /// </summary>
     private void HandleFatalError(Exception ex)
     {
@@ -216,14 +202,13 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// 应用程序退出事件处理，用于清理资源。
+    /// 应用程序退出事件处理，清理资源。
     /// </summary>
     private void OnApplicationExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
     {
 #if DEBUG
         Console.WriteLine("📦 应用程序正在退出...");
 #endif
-        // 释放服务提供程序（如果实现了 IDisposable）
         if (_serviceProvider is IDisposable disposable)
         {
             disposable.Dispose();

@@ -6,7 +6,7 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
-      "PDFTranslator.GUI/1.0.0": {
+      "PDFTranslatorGUI/1.0.0": {
         "dependencies": {
           "Avalonia": "11.3.9",
           "Avalonia.Desktop": "11.3.9",
@@ -14,12 +14,13 @@
           "Avalonia.Fonts.Inter": "11.3.9",
           "Avalonia.ReactiveUI": "11.3.9",
           "Avalonia.Themes.Fluent": "11.3.9",
+          "Microsoft.Extensions.Configuration.Abstractions": "9.0.0",
           "Microsoft.Extensions.DependencyInjection": "9.0.0",
           "Microsoft.Extensions.Logging.Console": "9.0.0",
           "PDFTranslator.Core": "1.0.0"
         },
         "runtime": {
-          "PDFTranslator.GUI.dll": {}
+          "PDFTranslatorGUI.dll": {}
         }
       },
       "Avalonia/11.3.9": {
@@ -780,7 +781,7 @@
     }
   },
   "libraries": {
-    "PDFTranslator.GUI/1.0.0": {
+    "PDFTranslatorGUI/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

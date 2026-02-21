@@ -1,8 +1,19 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="PDFTranslator.GUI.App">
+    
+    <!-- 应用程序资源字典 -->
+    <Application.Resources>
+        <!-- 可以在这里定义全局样式、颜色、转换器等 -->
+    </Application.Resources>
+
+    <!-- 应用程序样式主题 -->
     <Application.Styles>
-        <!-- 使用 Fluent 主题 -->
+        <!-- 使用 Fluent 主题（Windows 11 风格） -->
         <FluentTheme />
+        
+        <!-- 可以添加自定义全局样式 -->
+        <!-- <StyleInclude Source="avares://PDFTranslator.GUI/Styles/GlobalStyles.axaml"/> -->
     </Application.Styles>
+
 </Application>

@@ -119,6 +119,11 @@ class Program
         bool showProgress = true;
         bool showConfig = false;
 
+        // 页面范围相关变量
+        PageRangeMode pageRangeMode = PageRangeMode.All;
+        string? pageRange = null;
+        int? singlePage = null;
+
         // 先简单解析参数，识别 --auto-output 和 --help 等
         List<string> remainingArgs = new List<string>();
         for (int i = 0; i < args.Length; i++)
@@ -135,7 +140,6 @@ class Program
             else if (args[i] == "--config")
             {
                 showConfig = true;
-                // 继续收集剩余参数，但后面会特殊处理
                 remainingArgs.Add(args[i]);
             }
             else
@@ -147,14 +151,11 @@ class Program
         // 现在处理剩余参数（不含已识别的特殊命令）
         if (showConfig)
         {
-            // 如果只显示配置，需要配置可能从环境变量来，但无需输入文件等
             if (remainingArgs.Count == 1) // 只有 --config
             {
                 ShowCurrentConfig(defaultConfig);
                 return;
             }
-            // 否则继续，可能后面还有参数，但为了简化，我们先支持纯 --config
-            // 如果有其他参数，则按正常流程
         }
 
         // 确定位置参数数量
@@ -171,7 +172,6 @@ class Program
         if (!autoOutput)
         {
             outputPath = remainingArgs[1];
-            // 移除已使用的两个参数
             remainingArgs = remainingArgs.Skip(2).ToList();
         }
         else
@@ -243,6 +243,23 @@ class Program
                         targetLang = remainingArgs[++i];
                     break;
 
+                case "--pages":
+                case "-p":
+                    if (i + 1 < remainingArgs.Count)
+                    {
+                        pageRange = remainingArgs[++i];
+                        pageRangeMode = PageRangeMode.Range;
+                    }
+                    break;
+
+                case "--page":
+                    if (i + 1 < remainingArgs.Count && int.TryParse(remainingArgs[++i], out int page))
+                    {
+                        singlePage = page;
+                        pageRangeMode = PageRangeMode.Single;
+                    }
+                    break;
+
                 case "--translate-images":
                 case "-ti":
                     if (i + 1 < remainingArgs.Count && bool.TryParse(remainingArgs[++i], out bool ti))
@@ -271,7 +288,7 @@ class Program
             Console.WriteLine($"自动生成输出文件: {outputPath}");
         }
 
-        // 验证输出路径是否有效（目录存在？可以尝试创建）
+        // 验证输出路径是否有效
         try
         {
             string? outDir = Path.GetDirectoryName(outputPath);
@@ -311,6 +328,15 @@ class Program
         Console.WriteLine($"输入文件: {inputPath}");
         Console.WriteLine($"输出文件: {outputPath}");
         Console.WriteLine($"翻译模式: {(mode == TranslationMode.Translate ? "仅译文" : "双语对照")}");
+        
+        // 显示页面范围信息
+        if (pageRangeMode == PageRangeMode.Range && !string.IsNullOrEmpty(pageRange))
+            Console.WriteLine($"页码范围: {pageRange}");
+        else if (pageRangeMode == PageRangeMode.Single && singlePage.HasValue)
+            Console.WriteLine($"单页: {singlePage}");
+        else
+            Console.WriteLine($"页码范围: 全部");
+        
         Console.WriteLine($"源语言: {sourceLang} -> 目标语言: {targetLang}");
         Console.WriteLine($"Ollama 地址: {ollamaUrl}");
         Console.WriteLine($"模型: {model}");
@@ -324,7 +350,11 @@ class Program
         services.AddLogging(builder =>
         {
             builder.AddConsole();
+#if DEBUG
+            builder.SetMinimumLevel(LogLevel.Debug);
+#else
             builder.SetMinimumLevel(LogLevel.Warning);
+#endif
         });
         services.AddPDFTranslatorCore(ollamaBaseUrl: ollamaUrl, model: model);
 
@@ -332,12 +362,16 @@ class Program
         var translator = serviceProvider.GetRequiredService<PdfTranslator>();
         var options = serviceProvider.GetRequiredService<TranslationOptions>();
 
+        // 设置所有选项
         options.Mode = mode;
         options.TranslateImages = translateImages;
         options.FontName = fontName;
         options.FontPath = fontPath;
         options.SourceLanguage = sourceLang;
         options.TargetLanguage = targetLang;
+        options.PageRangeMode = pageRangeMode;
+        options.PageRange = pageRange;
+        options.SinglePage = singlePage;
 
         // 设置进度报告器
         if (showProgress)
@@ -383,13 +417,15 @@ class Program
             Console.WriteLine();
         }
 
-        // 执行翻译
+        // 执行翻译前检查输出路径是否为空
         if (string.IsNullOrEmpty(outputPath))
         {
             Console.WriteLine("错误：输出文件路径为空，无法进行翻译。");
             Environment.ExitCode = 1;
             return;
         }
+
+        // 执行翻译
         try
         {
             await translator.TranslatePdfAsync(inputPath, outputPath);
@@ -445,6 +481,11 @@ class Program
         Console.WriteLine("  --source, -s <代码>     源语言代码 (如 en, zh, ja, fr)，默认 en");
         Console.WriteLine("  --target, -t <代码>     目标语言代码 (如 zh, en, ja, de)，默认 zh");
         Console.WriteLine();
+        Console.WriteLine("页面范围选项:");
+        Console.WriteLine("  --pages, -p <范围>       指定页码范围，如 1-5,7,9-11");
+        Console.WriteLine("  --page <页码>             指定单个页面，如 3");
+        Console.WriteLine("                            不指定则翻译全部页面");
+        Console.WriteLine();
         Console.WriteLine("Ollama 配置:");
         Console.WriteLine($"  --model <模型名>         使用的模型名称，默认 {defaultConfig.Model}");
         Console.WriteLine($"  --url <地址>             Ollama API 地址，默认 {defaultConfig.BaseUrl}");
@@ -461,7 +502,9 @@ class Program
         Console.WriteLine();
         Console.WriteLine("示例:");
         Console.WriteLine("  PDFTranslator.CLI doc.pdf --auto-output");
-        Console.WriteLine("  PDFTranslator.CLI doc.pdf --auto-output --mode bilingual --source en --target zh");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf --auto-output --pages 1-5,7");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --page 3 --mode bilingual");
         Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --model qwen2.5 --font-name SimSun");
+        Console.WriteLine("  PDFTranslator.CLI doc.pdf output.pdf --source en --target zh");
     }
 }

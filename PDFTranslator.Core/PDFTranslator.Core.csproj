@@ -24,6 +24,7 @@
   <ItemGroup>
     <!-- 可选：嵌入字体文件。如果希望内置默认字体，可以将字体文件放在 Fonts 文件夹并取消注释以下行 -->
     <!-- <EmbeddedResource Include="Fonts\NotoSansSC-Regular.ttf" /> -->
+    <EmbeddedResource Include="Fonts\NotoSansSC-Regular.ttf" /> 
   </ItemGroup>
 
 </Project>

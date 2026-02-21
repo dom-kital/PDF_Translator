@@ -2770,6 +2770,7 @@
       "Avalonia.Fonts.Inter >= 11.3.9",
       "Avalonia.ReactiveUI >= 11.3.9",
       "Avalonia.Themes.Fluent >= 11.3.9",
+      "Microsoft.Extensions.Configuration.Abstractions >= 9.0.0",
       "Microsoft.Extensions.DependencyInjection >= 9.0.0",
       "Microsoft.Extensions.Logging.Console >= 9.0.0",
       "PDFTranslator.Core >= 1.0.0"
@@ -2782,7 +2783,7 @@
     "version": "1.0.0",
     "restore": {
       "projectUniqueName": "E:\\PDF_Translator\\PDFTranslator.GUI\\PDFTranslator.GUI.csproj",
-      "projectName": "PDFTranslator.GUI",
+      "projectName": "PDFTranslatorGUI",
       "projectPath": "E:\\PDF_Translator\\PDFTranslator.GUI\\PDFTranslator.GUI.csproj",
       "packagesPath": "C:\\Users\\kital\\.nuget\\packages\\",
       "outputPath": "E:\\PDF_Translator\\PDFTranslator.GUI\\obj\\",
@@ -2845,6 +2846,10 @@
           "Avalonia.Themes.Fluent": {
             "target": "Package",
             "version": "[11.3.9, )"
+          },
+          "Microsoft.Extensions.Configuration.Abstractions": {
+            "target": "Package",
+            "version": "[9.0.0, )"
           },
           "Microsoft.Extensions.DependencyInjection": {
             "target": "Package",

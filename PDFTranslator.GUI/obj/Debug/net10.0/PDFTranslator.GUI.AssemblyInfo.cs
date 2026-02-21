@@ -10,13 +10,15 @@
 using System;
 using System.Reflection;
 
-[assembly: System.Reflection.AssemblyCompanyAttribute("PDFTranslator.GUI")]
+[assembly: System.Reflection.AssemblyCompanyAttribute("Your Name")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
+[assembly: System.Reflection.AssemblyDescriptionAttribute("基于 Ollama 的本地 PDF 翻译工具 - 图形界面版本")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7139cac7f04dbffb60fb416e343d7df9ad6aff5f")]
-[assembly: System.Reflection.AssemblyProductAttribute("PDFTranslator.GUI")]
-[assembly: System.Reflection.AssemblyTitleAttribute("PDFTranslator.GUI")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b4ac6c4bceb6b59ba4ffdc5e758a0d2602dbf968")]
+[assembly: System.Reflection.AssemblyProductAttribute("PDFTranslatorGUI")]
+[assembly: System.Reflection.AssemblyTitleAttribute("PDFTranslatorGUI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
+[assembly: System.Reflection.AssemblyMetadataAttribute("RepositoryUrl", "https://github.com/yourname/PDFTranslator.git")]
 
 // 由 MSBuild WriteCodeFragment 类生成。
 

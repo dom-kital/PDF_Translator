@@ -8,7 +8,7 @@
       "version": "1.0.0",
       "restore": {
         "projectUniqueName": "E:\\PDF_Translator\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
-        "projectName": "PDFTranslator.CLI",
+        "projectName": "PDFTranslator",
         "projectPath": "E:\\PDF_Translator\\PDFTranslator.CLI\\PDFTranslator.CLI.csproj",
         "packagesPath": "C:\\Users\\kital\\.nuget\\packages\\",
         "outputPath": "E:\\PDF_Translator\\PDFTranslator.CLI\\obj\\",
@@ -50,11 +50,11 @@
           "dependencies": {
             "Microsoft.Extensions.DependencyInjection": {
               "target": "Package",
-              "version": "[10.0.3, )"
+              "version": "[9.0.0, )"
             },
             "Microsoft.Extensions.Logging.Console": {
               "target": "Package",
-              "version": "[10.0.3, )"
+              "version": "[9.0.0, )"
             }
           },
           "imports": [

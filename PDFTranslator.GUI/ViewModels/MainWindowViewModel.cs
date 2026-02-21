@@ -1,6 +1,6 @@
 using System;
-using System.IO; // 提供 Path 类
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reactive;
@@ -20,16 +20,9 @@ namespace PDFTranslator.GUI.ViewModels;
 /// </summary>
 public class OllamaModelInfo
 {
-    /// <summary>模型名称</summary>
     public string Name { get; set; } = string.Empty;
-
-    /// <summary>模型大小（字节）</summary>
     public long Size { get; set; }
-
-    /// <summary>模型修改时间</summary>
     public DateTime ModifiedAt { get; set; }
-
-    /// <summary>显示名称（格式：名称 (大小MB)）</summary>
     public string DisplayName => $"{Name} ({(Size / 1024 / 1024):F1} MB)";
 }
 
@@ -59,18 +52,17 @@ public class GuiProgressReporter : IProgressReporter
 /// </summary>
 public class MainWindowViewModel : ViewModelBase
 {
-    private readonly PdfTranslator _translator;          // PDF 翻译核心
-    private readonly TranslationOptions _options;        // 翻译配置（与 Core 共享）
-    private readonly ILogger<MainWindowViewModel> _logger; // 日志记录器
-    private IStorageProvider? _storageProvider;          // 文件存储提供程序（由视图设置）
+    private PdfTranslator? _translator;
+    private TranslationOptions? _options;
+    private ILogger<MainWindowViewModel>? _logger;
+    private IStorageProvider? _storageProvider;
 
     // ==================== 自动输出文件名相关 ====================
-    private bool _isOutputPathManuallySet; // 记录用户是否手动修改过输出路径
+    private bool _isOutputPathManuallySet;
 
     // ==================== Ollama 配置属性 ====================
 
     private string _ollamaUrl = "http://localhost:11434";
-    /// <summary>Ollama API 地址</summary>
     public string OllamaUrl
     {
         get => _ollamaUrl;
@@ -78,19 +70,17 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private string _ollamaModel = "llama3.2";
-    /// <summary>当前选中的 Ollama 模型名称</summary>
     public string OllamaModel
     {
         get => _ollamaModel;
         set
         {
             this.RaiseAndSetIfChanged(ref _ollamaModel, value);
-            _options.Model = value; // 同步到核心配置
+            if (_options != null) _options.Model = value;
         }
     }
 
     private OllamaModelInfo? _selectedModel;
-    /// <summary>下拉菜单选中的模型对象</summary>
     public OllamaModelInfo? SelectedModel
     {
         get => _selectedModel;
@@ -102,7 +92,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private int _timeoutSeconds = 60;
-    /// <summary>请求超时时间（秒）</summary>
     public int TimeoutSeconds
     {
         get => _timeoutSeconds;
@@ -110,7 +99,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private bool _isOllamaConnected;
-    /// <summary>Ollama 服务连接状态</summary>
     public bool IsOllamaConnected
     {
         get => _isOllamaConnected;
@@ -118,7 +106,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private string _ollamaStatusMessage = "未连接";
-    /// <summary>连接状态详细文本</summary>
     public string OllamaStatusMessage
     {
         get => _ollamaStatusMessage;
@@ -126,7 +113,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private ObservableCollection<OllamaModelInfo> _availableModels = new();
-    /// <summary>可用模型列表（用于下拉菜单）</summary>
     public ObservableCollection<OllamaModelInfo> AvailableModels
     {
         get => _availableModels;
@@ -134,7 +120,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private bool _isRefreshingModels;
-    /// <summary>是否正在刷新模型列表</summary>
     public bool IsRefreshingModels
     {
         get => _isRefreshingModels;
@@ -142,7 +127,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private string _modelListStatus = string.Empty;
-    /// <summary>模型列表状态信息（如“找到 5 个模型”）</summary>
     public string ModelListStatus
     {
         get => _modelListStatus;
@@ -151,42 +135,37 @@ public class MainWindowViewModel : ViewModelBase
 
     // ==================== 语言选择属性 ====================
 
-    /// <summary>源语言可选列表</summary>
     public ObservableCollection<string> SourceLanguages { get; } = new()
         { "en", "zh", "ja", "ko", "fr", "de", "es", "ru", "ar" };
 
-    /// <summary>目标语言可选列表</summary>
     public ObservableCollection<string> TargetLanguages { get; } = new()
         { "zh", "en", "ja", "ko", "fr", "de", "es", "ru", "ar" };
 
     private string _sourceLanguage = "en";
-    /// <summary>源语言代码</summary>
     public string SourceLanguage
     {
         get => _sourceLanguage;
         set
         {
             this.RaiseAndSetIfChanged(ref _sourceLanguage, value);
-            _options.SourceLanguage = value;
+            if (_options != null) _options.SourceLanguage = value;
         }
     }
 
     private string _targetLanguage = "zh";
-    /// <summary>目标语言代码</summary>
     public string TargetLanguage
     {
         get => _targetLanguage;
         set
         {
             this.RaiseAndSetIfChanged(ref _targetLanguage, value);
-            _options.TargetLanguage = value;
+            if (_options != null) _options.TargetLanguage = value;
         }
     }
 
     // ==================== 文件路径属性 ====================
 
     private string _inputPath = string.Empty;
-    /// <summary>输入 PDF 文件路径</summary>
     public string InputPath
     {
         get => _inputPath;
@@ -194,7 +173,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private string _outputPath = string.Empty;
-    /// <summary>输出 PDF 文件路径</summary>
     public string OutputPath
     {
         get => _outputPath;
@@ -204,59 +182,137 @@ public class MainWindowViewModel : ViewModelBase
     // ==================== 翻译模式 ====================
 
     private bool _isBilingual;
-    /// <summary>是否为双语对照模式</summary>
     public bool IsBilingual
     {
         get => _isBilingual;
         set
         {
             this.RaiseAndSetIfChanged(ref _isBilingual, value);
-            _options.Mode = value ? TranslationMode.Bilingual : TranslationMode.Translate;
+            if (_options != null) _options.Mode = value ? TranslationMode.Bilingual : TranslationMode.Translate;
         }
     }
 
     private bool _translateImages;
-    /// <summary>是否翻译图片中的文字（预留功能）</summary>
     public bool TranslateImages
     {
         get => _translateImages;
         set
         {
             this.RaiseAndSetIfChanged(ref _translateImages, value);
-            _options.TranslateImages = value;
+            if (_options != null) _options.TranslateImages = value;
         }
     }
 
     // ==================== 字体配置 ====================
 
     private string _fontName = string.Empty;
-    /// <summary>用户指定的字体名称</summary>
     public string FontName
     {
         get => _fontName;
         set
         {
             this.RaiseAndSetIfChanged(ref _fontName, value);
-            _options.FontName = string.IsNullOrEmpty(value) ? null : value;
+            if (_options != null) _options.FontName = string.IsNullOrEmpty(value) ? null : value;
         }
     }
 
     private string _fontPath = string.Empty;
-    /// <summary>用户指定的字体文件路径</summary>
     public string FontPath
     {
         get => _fontPath;
         set
         {
             this.RaiseAndSetIfChanged(ref _fontPath, value);
-            _options.FontPath = string.IsNullOrEmpty(value) ? null : value;
+            if (_options != null) _options.FontPath = string.IsNullOrEmpty(value) ? null : value;
         }
     }
+
+    // ==================== 页面范围属性 ====================
+
+    private PageRangeMode _pageRangeMode = PageRangeMode.All;
+    public PageRangeMode PageRangeMode
+    {
+        get => _pageRangeMode;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _pageRangeMode, value);
+            if (_options != null) _options.PageRangeMode = value;
+            
+            // 当模式改变时，更新相关的布尔属性
+            this.RaisePropertyChanged(nameof(IsAllPages));
+            this.RaisePropertyChanged(nameof(IsRangePages));
+            this.RaisePropertyChanged(nameof(IsSinglePage));
+            this.RaisePropertyChanged(nameof(ShowRangeInput));
+            this.RaisePropertyChanged(nameof(ShowSingleInput));
+        }
+    }
+
+    private string _pageRange = string.Empty;
+    public string PageRange
+    {
+        get => _pageRange;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _pageRange, value);
+            if (_options != null) _options.PageRange = value;
+        }
+    }
+
+    private int _singlePage = 1;
+    public int SinglePage
+    {
+        get => _singlePage;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _singlePage, value);
+            if (_options != null) _options.SinglePage = value;
+        }
+    }
+
+    private int _totalPages;
+    public int TotalPages
+    {
+        get => _totalPages;
+        private set => this.RaiseAndSetIfChanged(ref _totalPages, value);
+    }
+
+    // ==================== 页面范围辅助属性（用于XAML绑定）====================
+    public bool IsAllPages
+    {
+        get => PageRangeMode == PageRangeMode.All;
+        set
+        {
+            if (value) PageRangeMode = PageRangeMode.All;
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public bool IsRangePages
+    {
+        get => PageRangeMode == PageRangeMode.Range;
+        set
+        {
+            if (value) PageRangeMode = PageRangeMode.Range;
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public bool IsSinglePage
+    {
+        get => PageRangeMode == PageRangeMode.Single;
+        set
+        {
+            if (value) PageRangeMode = PageRangeMode.Single;
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public bool ShowRangeInput => PageRangeMode == PageRangeMode.Range;
+    public bool ShowSingleInput => PageRangeMode == PageRangeMode.Single;
 
     // ==================== 日志和进度 ====================
 
     private string _log = string.Empty;
-    /// <summary>日志文本（显示在界面下方）</summary>
     public string Log
     {
         get => _log;
@@ -264,7 +320,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private bool _isBusy;
-    /// <summary>是否正在处理中（用于禁用开始按钮）</summary>
     public bool IsBusy
     {
         get => _isBusy;
@@ -272,7 +327,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private int _progressValue;
-    /// <summary>当前进度值（已处理页数）</summary>
     public int ProgressValue
     {
         get => _progressValue;
@@ -280,7 +334,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private int _progressMax = 100;
-    /// <summary>进度最大值（总页数）</summary>
     public int ProgressMax
     {
         get => _progressMax;
@@ -288,7 +341,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private bool _showProgress;
-    /// <summary>是否显示进度条</summary>
     public bool ShowProgress
     {
         get => _showProgress;
@@ -296,49 +348,102 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private string _progressMessage = string.Empty;
-    /// <summary>进度状态信息（如“正在处理第 3 页”）</summary>
     public string ProgressMessage
     {
         get => _progressMessage;
         private set => this.RaiseAndSetIfChanged(ref _progressMessage, value);
     }
 
+    // ==================== 内存监控属性 ====================
+
+    private string _memoryUsage = string.Empty;
+    public string MemoryUsage
+    {
+        get => _memoryUsage;
+        private set => this.RaiseAndSetIfChanged(ref _memoryUsage, value);
+    }
+
+    private bool _showMemoryWarning;
+    public bool ShowMemoryWarning
+    {
+        get => _showMemoryWarning;
+        private set => this.RaiseAndSetIfChanged(ref _showMemoryWarning, value);
+    }
+
+    private string _memoryWarningMessage = string.Empty;
+    public string MemoryWarningMessage
+    {
+        get => _memoryWarningMessage;
+        private set => this.RaiseAndSetIfChanged(ref _memoryWarningMessage, value);
+    }
+
     // ==================== 命令 ====================
 
-    /// <summary>选择输入文件的命令</summary>
-    public ReactiveCommand<Unit, Unit> SelectInputCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectInputCommand { get; private set; } = ReactiveCommand.CreateFromTask(() => Task.CompletedTask);
+    public ReactiveCommand<Unit, Unit> SelectOutputCommand { get; private set; } = ReactiveCommand.CreateFromTask(() => Task.CompletedTask);
+    public ReactiveCommand<Unit, Unit> SelectFontCommand { get; private set; } = ReactiveCommand.CreateFromTask(() => Task.CompletedTask);
+    public ReactiveCommand<Unit, Unit> StartCommand { get; private set; } = ReactiveCommand.CreateFromTask(() => Task.CompletedTask);
+    public ReactiveCommand<Unit, Unit> TestOllamaConnectionCommand { get; private set; } = ReactiveCommand.CreateFromTask(() => Task.CompletedTask);
+    public ReactiveCommand<Unit, Unit> RefreshModelsCommand { get; private set; } = ReactiveCommand.CreateFromTask(() => Task.CompletedTask);
+    public ReactiveCommand<Unit, Unit> SaveOllamaConfigCommand { get; private set; } = ReactiveCommand.Create(() => { });
 
-    /// <summary>选择输出文件的命令</summary>
-    public ReactiveCommand<Unit, Unit> SelectOutputCommand { get; }
+    // ==================== 定时器 ====================
+    private IDisposable? _memoryTimer;
 
-    /// <summary>选择字体文件的命令</summary>
-    public ReactiveCommand<Unit, Unit> SelectFontCommand { get; }
-
-    /// <summary>开始翻译的命令</summary>
-    public ReactiveCommand<Unit, Unit> StartCommand { get; }
-
-    /// <summary>测试 Ollama 连接的命令</summary>
-    public ReactiveCommand<Unit, Unit> TestOllamaConnectionCommand { get; }
-
-    /// <summary>刷新模型列表的命令</summary>
-    public ReactiveCommand<Unit, Unit> RefreshModelsCommand { get; }
-
-    /// <summary>保存 Ollama 配置的命令（仅记录日志）</summary>
-    public ReactiveCommand<Unit, Unit> SaveOllamaConfigCommand { get; }
+    // ==================== 构造函数 ====================
 
     /// <summary>
-    /// 构造函数，通过依赖注入获取所需服务。
+    /// 无参构造函数，用于 App.xaml.cs 中的早期创建
+    /// </summary>
+    public MainWindowViewModel()
+    {
+        InitializeCommands();
+        
+        // 从环境变量加载配置
+        LoadOllamaConfigFromEnvironment();
+
+        // 初始化进度条
+        ProgressMax = 100;
+        ShowProgress = false;
+
+        // 初始化内存监控
+        ShowMemoryWarning = false;
+        StartMemoryMonitoring();
+
+        // 监听输入文件变化和模式变化，自动建议输出路径
+        this.WhenAnyValue(x => x.InputPath)
+            .Where(path => !string.IsNullOrEmpty(path) && !_isOutputPathManuallySet)
+            .Subscribe(_ => GenerateSuggestedOutputPath());
+
+        this.WhenAnyValue(x => x.IsBilingual)
+            .Where(_ => !_isOutputPathManuallySet && !string.IsNullOrEmpty(InputPath))
+            .Subscribe(_ => GenerateSuggestedOutputPath());
+
+        // 监听 OutputPath 的手动修改
+        this.WhenAnyValue(x => x.OutputPath)
+            .Skip(1)
+            .Subscribe(_ => _isOutputPathManuallySet = true);
+
+        // 自动测试 Ollama 连接
+        Dispatcher.UIThread.Post(async () => await TestOllamaConnectionAsync());
+    }
+
+    /// <summary>
+    /// 带参数的构造函数，用于依赖注入
     /// </summary>
     public MainWindowViewModel(
         PdfTranslator translator,
         TranslationOptions options,
-        ILogger<MainWindowViewModel> logger)
+        ILogger<MainWindowViewModel> logger) : this()
     {
-        _translator = translator;
-        _options = options;
-        _logger = logger;
+        InitializeServices(translator, options, logger);
+    }
 
-        // ---------- 初始化命令 ----------
+    /// <summary>
+    /// 初始化命令
+    /// </summary>
+    private void InitializeCommands()
+    {
         SelectInputCommand = ReactiveCommand.CreateFromTask(SelectInputAsync);
         SelectOutputCommand = ReactiveCommand.CreateFromTask(SelectOutputAsync);
         SelectFontCommand = ReactiveCommand.CreateFromTask(SelectFontAsync);
@@ -348,46 +453,105 @@ public class MainWindowViewModel : ViewModelBase
         TestOllamaConnectionCommand = ReactiveCommand.CreateFromTask(TestOllamaConnectionAsync);
         RefreshModelsCommand = ReactiveCommand.CreateFromTask(RefreshModelsAsync);
         SaveOllamaConfigCommand = ReactiveCommand.Create(SaveOllamaConfig);
+    }
 
-        // ---------- 从环境变量加载初始配置（可选）----------
-        LoadOllamaConfigFromEnvironment();
+    /// <summary>
+    /// 初始化服务（由 App.xaml.cs 在构建服务后调用）
+    /// </summary>
+    public void InitializeServices(PdfTranslator translator, TranslationOptions options, ILogger<MainWindowViewModel> logger)
+    {
+        _translator = translator;
+        _options = options;
+        _logger = logger;
 
-        // ---------- 从 Core 配置同步到视图模型 ----------
+        // 从 Core 配置同步到视图模型
         IsBilingual = _options.Mode == TranslationMode.Bilingual;
         TranslateImages = _options.TranslateImages;
         FontName = _options.FontName ?? string.Empty;
         FontPath = _options.FontPath ?? string.Empty;
         SourceLanguage = _options.SourceLanguage;
         TargetLanguage = _options.TargetLanguage;
-
-        // ---------- 初始化进度条 ----------
-        ProgressMax = 100;
-        ShowProgress = false;
-
-        // ---------- 监听输入文件变化和模式变化，自动建议输出路径 ----------
-        // 当 InputPath 变化且用户未手动设置输出路径时，生成建议路径
-        this.WhenAnyValue(x => x.InputPath)
-            .Where(path => !string.IsNullOrEmpty(path) && !_isOutputPathManuallySet)
-            .Subscribe(_ => GenerateSuggestedOutputPath());
-
-        // 当 IsBilingual 变化且用户未手动设置输出路径且已有输入文件时，更新建议路径
-        this.WhenAnyValue(x => x.IsBilingual)
-            .Where(_ => !_isOutputPathManuallySet && !string.IsNullOrEmpty(InputPath))
-            .Subscribe(_ => GenerateSuggestedOutputPath());
-
-        // 监听 OutputPath 的手动修改
-        // Skip(1) 跳过初始值，避免在初始化时触发
-        this.WhenAnyValue(x => x.OutputPath)
-            .Skip(1)
-            .Subscribe(_ => _isOutputPathManuallySet = true);
-
-        // ---------- 自动测试 Ollama 连接 ----------
-        Dispatcher.UIThread.Post(async () => await TestOllamaConnectionAsync());
+        
+        // 同步页面范围设置
+        PageRangeMode = _options.PageRangeMode;
+        PageRange = _options.PageRange ?? string.Empty;
+        if (_options.SinglePage.HasValue)
+            SinglePage = _options.SinglePage.Value;
     }
 
+    // ==================== 日志方法 ====================
+
     /// <summary>
-    /// 从环境变量 OLLAMA_HOST 和 OLLAMA_MODEL 加载默认配置。
+    /// 添加日志消息（供外部调用，自动在 UI 线程执行）
     /// </summary>
+    /// <param name="message">要添加的日志消息</param>
+    public void AddLogMessage(string message)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            Log += message;
+        });
+    }
+
+    // ==================== 内存监控方法 ====================
+
+    private void StartMemoryMonitoring()
+    {
+        _memoryTimer = Observable.Interval(TimeSpan.FromSeconds(2))
+            .Subscribe(_ => UpdateMemoryUsage());
+    }
+
+    private void UpdateMemoryUsage()
+    {
+        try
+        {
+            var process = System.Diagnostics.Process.GetCurrentProcess();
+            var workingSet = process.WorkingSet64 / 1024 / 1024;
+            var privateMemory = process.PrivateMemorySize64 / 1024 / 1024;
+            var managedMemory = GC.GetTotalMemory(false) / 1024 / 1024;
+
+            var memoryText = $"内存: 工作集 {workingSet}MB | 私有 {privateMemory}MB | 托管 {managedMemory}MB";
+            
+            Dispatcher.UIThread.Post(() =>
+            {
+                MemoryUsage = memoryText;
+                CheckMemoryWarning(workingSet, privateMemory, managedMemory);
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "更新内存使用信息失败");
+        }
+    }
+
+    private void CheckMemoryWarning(long workingSet, long privateMemory, long managedMemory)
+    {
+        const long WARNING_THRESHOLD_MB = 1024;
+        const long CRITICAL_THRESHOLD_MB = 2048;
+
+        if (workingSet > CRITICAL_THRESHOLD_MB || privateMemory > CRITICAL_THRESHOLD_MB)
+        {
+            ShowMemoryWarning = true;
+            MemoryWarningMessage = $"⚠️ 内存使用过高！当前 {workingSet}MB，建议关闭其他程序或分批处理文档。";
+        }
+        else if (workingSet > WARNING_THRESHOLD_MB || privateMemory > WARNING_THRESHOLD_MB)
+        {
+            ShowMemoryWarning = true;
+            MemoryWarningMessage = $"⚠️ 内存使用较高 ({workingSet}MB)，如果出现卡顿，建议分批处理文档。";
+        }
+        else
+        {
+            ShowMemoryWarning = false;
+        }
+    }
+
+    public void Cleanup()
+    {
+        _memoryTimer?.Dispose();
+    }
+
+    // ==================== 辅助方法 ====================
+
     private void LoadOllamaConfigFromEnvironment()
     {
         string? host = Environment.GetEnvironmentVariable("OLLAMA_HOST");
@@ -404,15 +568,9 @@ public class MainWindowViewModel : ViewModelBase
             OllamaModel = model;
     }
 
-    /// <summary>
-    /// 由视图调用，设置文件存储提供程序（用于文件对话框）。
-    /// </summary>
     public void SetStorageProvider(IStorageProvider storageProvider) =>
         _storageProvider = storageProvider;
 
-    /// <summary>
-    /// 检查存储提供程序是否可用，若不可用则在日志中记录错误。
-    /// </summary>
     private bool CheckStorageProvider()
     {
         if (_storageProvider == null)
@@ -423,9 +581,20 @@ public class MainWindowViewModel : ViewModelBase
         return true;
     }
 
-    /// <summary>
-    /// 根据输入文件路径和当前翻译模式生成建议的输出文件路径。
-    /// </summary>
+    private async Task<int> GetPdfPageCount(string filePath)
+    {
+        try
+        {
+            using var pdf = new iText.Kernel.Pdf.PdfDocument(new iText.Kernel.Pdf.PdfReader(filePath));
+            return pdf.GetNumberOfPages();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "获取 PDF 页数失败");
+            return 0;
+        }
+    }
+
     private void GenerateSuggestedOutputPath()
     {
         if (string.IsNullOrEmpty(InputPath))
@@ -439,7 +608,6 @@ public class MainWindowViewModel : ViewModelBase
             string suffix = IsBilingual ? "_bilingual" : "_translated";
             string suggestedPath = Path.Combine(dir, $"{fileNameWithoutExt}{suffix}{ext}");
             
-            // 只有当建议路径与当前路径不同时才更新，避免触发额外的事件
             if (OutputPath != suggestedPath)
             {
                 OutputPath = suggestedPath;
@@ -447,8 +615,7 @@ public class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "生成建议输出路径时出错");
-            // 不阻塞用户体验，只是记录警告
+            _logger?.LogWarning(ex, "生成建议输出路径时出错");
         }
     }
 
@@ -581,10 +748,10 @@ public class MainWindowViewModel : ViewModelBase
         if (files.Count == 1)
         {
             InputPath = files[0].Path.LocalPath;
-            // 重置手动标记，因为选择了全新的输入文件
+            TotalPages = await GetPdfPageCount(InputPath);
+            Log += $"已选择输入文件: {InputPath} (共 {TotalPages} 页)\n";
             _isOutputPathManuallySet = false;
-            GenerateSuggestedOutputPath(); // 立即生成建议路径
-            Log += $"已选择输入文件: {InputPath}\n";
+            GenerateSuggestedOutputPath();
         }
     }
 
@@ -597,13 +764,14 @@ public class MainWindowViewModel : ViewModelBase
             Title = "选择输出 PDF 文件",
             DefaultExtension = "pdf",
             FileTypeChoices = new[] { new FilePickerFileType("PDF 文件") { Patterns = new[] { "*.pdf" } } },
-            SuggestedFileName = Path.GetFileName(OutputPath) // 使用当前输出路径的文件名作为建议
+            SuggestedFileName = !string.IsNullOrEmpty(OutputPath) 
+                ? Path.GetFileName(OutputPath) 
+                : "output.pdf"
         });
 
         if (file != null)
         {
             OutputPath = file.Path.LocalPath;
-            // 用户通过浏览选择了输出文件，视为手动设置
             _isOutputPathManuallySet = true;
             Log += $"已选择输出文件: {OutputPath}\n";
         }
@@ -642,6 +810,12 @@ public class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (_translator == null)
+        {
+            Log += "错误：翻译器未初始化。\n";
+            return;
+        }
+
         if (!IsOllamaConnected)
         {
             Log += "警告: Ollama 未连接，尝试重新连接...\n";
@@ -653,6 +827,11 @@ public class MainWindowViewModel : ViewModelBase
             }
         }
 
+        // 翻译前检查内存使用
+        var process = System.Diagnostics.Process.GetCurrentProcess();
+        var memoryBefore = process.WorkingSet64 / 1024 / 1024;
+        Log += $"翻译前内存使用: {memoryBefore}MB\n";
+
         IsBusy = true;
         ShowProgress = true;
         ProgressValue = 0;
@@ -663,12 +842,28 @@ public class MainWindowViewModel : ViewModelBase
         Log += $"模型: {OllamaModel}\n";
         Log += $"语言: {SourceLanguage} → {TargetLanguage}\n";
         Log += $"模式: {(IsBilingual ? "双语对照" : "仅译文")}\n";
+        
+        // 显示页面范围信息
+        if (PageRangeMode == PageRangeMode.Range && !string.IsNullOrEmpty(PageRange))
+            Log += $"页码范围: {PageRange}\n";
+        else if (PageRangeMode == PageRangeMode.Single)
+            Log += $"单页: {SinglePage}\n";
+        else
+            Log += $"页码范围: 全部 (共 {TotalPages} 页)\n";
+        
         if (!string.IsNullOrEmpty(FontName)) Log += $"字体名称: {FontName}\n";
         if (!string.IsNullOrEmpty(FontPath)) Log += $"字体路径: {FontPath}\n";
 
-        _options.Model = OllamaModel;
-        _options.SourceLanguage = SourceLanguage;
-        _options.TargetLanguage = TargetLanguage;
+        // 同步所有配置到 Core
+        if (_options != null)
+        {
+            _options.Model = OllamaModel;
+            _options.SourceLanguage = SourceLanguage;
+            _options.TargetLanguage = TargetLanguage;
+            _options.PageRangeMode = PageRangeMode;
+            _options.PageRange = PageRange;
+            _options.SinglePage = SinglePage;
+        }
 
         var reporter = new GuiProgressReporter(
             onProgress: (current, total, msg) => Dispatcher.UIThread.Post(() =>
@@ -681,6 +876,10 @@ public class MainWindowViewModel : ViewModelBase
             {
                 ShowProgress = false;
                 if (!string.IsNullOrEmpty(msg)) Log += msg + "\n";
+                
+                // 翻译后记录内存使用
+                var memoryAfter = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
+                Log += $"翻译后内存使用: {memoryAfter}MB\n";
             }));
 
         _translator.SetProgressReporter(reporter);
@@ -691,7 +890,7 @@ public class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "翻译失败");
+            _logger?.LogError(ex, "翻译失败");
             Log += $"错误: {ex.Message}\n";
             ShowProgress = false;
         }
@@ -699,5 +898,13 @@ public class MainWindowViewModel : ViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// 析构函数，清理资源
+    /// </summary>
+    ~MainWindowViewModel()
+    {
+        Cleanup();
     }
 }

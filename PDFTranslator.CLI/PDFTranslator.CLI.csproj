@@ -1,21 +1,47 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <ProjectReference Include="..\PDFTranslator.Core\PDFTranslator.Core.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.3" />
-  </ItemGroup>
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyName>PDFTranslator</AssemblyName>
+    <RootNamespace>PDFTranslator.CLI</RootNamespace>
+    <Version>1.0.0</Version>
+    <Authors>Your Name</Authors>
+    <Description>基于 Ollama 的本地 PDF 翻译工具 - 命令行版本</Description>
+    <PackageProjectUrl>https://github.com/yourname/PDFTranslator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/yourname/PDFTranslator.git</RepositoryUrl>
   </PropertyGroup>
 
-  
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 依赖注入核心包 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+    
+    <!-- 配置支持（如需从配置文件读取） -->
+    <!-- <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" /> -->
+    
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 引用核心项目 -->
+    <ProjectReference Include="..\PDFTranslator.Core\PDFTranslator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 如果需要嵌入配置文件 -->
+    <!-- <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None> -->
+  </ItemGroup>
 
 </Project>

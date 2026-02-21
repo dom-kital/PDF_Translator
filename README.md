@@ -91,15 +91,15 @@ dotnet run --project PDFTranslator.GUI
 ```
 ### 运行 CLI 版本
 ```bash
-dotnet run --project PDFTranslator.CLI -- <输入PDF> <输出PDF> [选项]
+dotnet run --project PDFTranslator.CLI -- "<输入PDF>" "<输出PDF>" [选项]
 ```
 #### 示例
 ```bash
 # 仅译文模式
-dotnet run --project PDFTranslator.CLI -- input.pdf output.pdf
+dotnet run --project PDFTranslator.CLI -- "input.pdf" "output.pdf"
 
 # 双语对照模式，使用模型 qwen2.5
-dotnet run --project PDFTranslator.CLI -- input.pdf output.pdf --mode bilingual --model qwen2.5
+dotnet run --project PDFTranslator.CLI -- "input.pdf" "output.pdf" --mode bilingual --model qwen2.5
 ```
 #### 命令行选项
 | 选项  |说明   |

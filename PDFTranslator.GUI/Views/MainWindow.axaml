@@ -17,18 +17,21 @@
     -->
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <!-- 
-            内部 Grid 采用行定义布局，共9行（0-8）：
+            内部 Grid 采用行定义布局，共12行（0-11）：
             0: Ollama 服务配置
             1: 文件选择（输入）
-            2: 文件选择（输出）- 已优化支持自动命名
+            2: 文件选择（输出）
             3: 翻译选项
             4: 字体设置
-            5: 开始按钮
-            6: 进度条
-            7: 日志标题
-            8: 日志文本框（占据剩余空间）
+            5: 页面范围
+            6: 开始按钮
+            7: 进度条
+            8: 内存监控（新增）
+            9: 日志标题
+            10: 日志文本框（占据剩余空间）
+            11: 底部留白
         -->
-        <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
+        <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
             
             <!-- 定义全局样式，用于分组边框和标题，保持界面统一 -->
             <Grid.Styles>
@@ -45,6 +48,24 @@
                     <Setter Property="FontWeight" Value="Bold"/>
                     <Setter Property="FontSize" Value="14"/>
                     <Setter Property="Margin" Value="0,0,0,10"/>
+                </Style>
+                <!-- 内存警告样式：红色背景 -->
+                <Style Selector="Border.memoryWarning">
+                    <Setter Property="Background" Value="#FFEBEE"/>
+                    <Setter Property="BorderBrush" Value="#F44336"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="CornerRadius" Value="4"/>
+                    <Setter Property="Padding" Value="8"/>
+                    <Setter Property="Margin" Value="0,0,0,5"/>
+                </Style>
+                <!-- 内存信息样式：灰色背景 -->
+                <Style Selector="Border.memoryInfo">
+                    <Setter Property="Background" Value="#F5F5F5"/>
+                    <Setter Property="BorderBrush" Value="#E0E0E0"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="CornerRadius" Value="4"/>
+                    <Setter Property="Padding" Value="8"/>
+                    <Setter Property="Margin" Value="0,0,0,5"/>
                 </Style>
             </Grid.Styles>
 
@@ -165,11 +186,9 @@
                 </StackPanel>
             </Border>
 
-            <!-- ===== 第2行：输出文件选择（优化版，支持自动命名）===== -->
+            <!-- ===== 第2行：输出文件选择（支持自动命名）===== -->
             <Border Grid.Row="2" Classes="groupBox">
                 <StackPanel>
-                    <!-- 不需要重复标题，因为和输入文件共享一个分组标题，但为了简洁，也可以单独放 -->
-                    <!-- 这里直接放置输出文件选择行，因为标题已在输入文件分组中 -->
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBox Text="{Binding OutputPath}" 
                                  Watermark="输出 PDF 文件路径（可手动修改）" 
@@ -253,8 +272,52 @@
                 </StackPanel>
             </Border>
 
-            <!-- ===== 第5行：开始翻译按钮 ===== -->
-            <StackPanel Grid.Row="5" HorizontalAlignment="Center" Margin="0,10">
+            <!-- ===== 第5行：页面范围选择 ===== -->
+            <Border Grid.Row="5" Classes="groupBox">
+                <StackPanel>
+                    <TextBlock Text="📄 页面范围" Classes="groupTitle"/>
+                    
+                    <!-- 模式选择：全部/范围/单页 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10" Spacing="20">
+                        <RadioButton Content="全部页面" 
+                                     IsChecked="{Binding IsAllPages}"
+                                     ToolTip.Tip="翻译 PDF 中的所有页面"/>
+                        <RadioButton Content="页码范围" 
+                                     IsChecked="{Binding IsRangePages}"
+                                     ToolTip.Tip="指定页码范围，如 1-5,7,9-11"/>
+                        <RadioButton Content="单页" 
+                                     IsChecked="{Binding IsSinglePage}"
+                                     ToolTip.Tip="翻译单个指定页面"/>
+                    </StackPanel>
+
+                    <!-- 页码范围输入（当选择 Range 时显示）-->
+                    <Grid IsVisible="{Binding ShowRangeInput}"
+                          Margin="0,0,0,5">
+                        <TextBox Text="{Binding PageRange}" 
+                                 Watermark="例如: 1-5,7,9-11"
+                                 ToolTip.Tip="输入页码范围，用逗号分隔，支持连字符表示范围"/>
+                    </Grid>
+
+                    <!-- 单页输入（当选择 Single 时显示）-->
+                    <Grid IsVisible="{Binding ShowSingleInput}"
+                          ColumnDefinitions="Auto,*" Margin="0,0,0,5">
+                        <TextBlock Text="页码:" VerticalAlignment="Center" Margin="0,0,5,0" Grid.Column="0"/>
+                        <TextBox Text="{Binding SinglePage}" 
+                                 Watermark="输入页码"
+                                 Grid.Column="1"
+                                 ToolTip.Tip="输入要翻译的单个页码"/>
+                    </Grid>
+
+                    <!-- 显示总页数信息 -->
+                    <TextBlock Text="{Binding TotalPages, StringFormat='总页数: {0}'}" 
+                               FontSize="11" 
+                               Foreground="Gray"
+                               Margin="0,5,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ===== 第6行：开始翻译按钮 ===== -->
+            <StackPanel Grid.Row="6" HorizontalAlignment="Center" Margin="0,10">
                 <Button Content="▶ 开始翻译" 
                         Command="{Binding StartCommand}" 
                         IsEnabled="{Binding !IsBusy}"
@@ -264,8 +327,8 @@
                         ToolTip.Tip="开始翻译 PDF 文件，需要先选择输入和输出文件"/>
             </StackPanel>
 
-            <!-- ===== 第6行：进度条（仅在翻译时显示）===== -->
-            <StackPanel Grid.Row="6" 
+            <!-- ===== 第7行：进度条（仅在翻译时显示）===== -->
+            <StackPanel Grid.Row="7" 
                         IsVisible="{Binding ShowProgress}" 
                         Margin="0,5" 
                         Spacing="5">
@@ -277,15 +340,36 @@
                              Foreground="#2196F3"/>
             </StackPanel>
 
-            <!-- ===== 第7行：日志标题 ===== -->
-            <TextBlock Grid.Row="7" 
+            <!-- ===== 第8行：内存监控区域（新增）===== -->
+            <StackPanel Grid.Row="8" Margin="0,5" Spacing="5">
+                <!-- 内存警告信息（当内存过高时显示） -->
+                <Border IsVisible="{Binding ShowMemoryWarning}" Classes="memoryWarning">
+                    <TextBlock Text="{Binding MemoryWarningMessage}" 
+                               Foreground="#D32F2F"
+                               FontWeight="Bold"
+                               TextWrapping="Wrap"/>
+                </Border>
+                
+                <!-- 内存使用信息（始终显示） -->
+                <Border Classes="memoryInfo">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="💾" FontSize="14"/>
+                        <TextBlock Text="{Binding MemoryUsage}" 
+                                   FontSize="11"
+                                   Foreground="#616161"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ===== 第9行：日志标题 ===== -->
+            <TextBlock Grid.Row="9" 
                        Text="📋 操作日志" 
                        FontWeight="SemiBold" 
                        Margin="0,10,0,5"/>
 
-            <!-- ===== 第8行：日志文本框（占据剩余空间，自动滚动）===== -->
+            <!-- ===== 第10行：日志文本框（占据剩余空间，自动滚动）===== -->
             <TextBox x:Name="LogTextBox"
-                     Grid.Row="8"
+                     Grid.Row="10"
                      Text="{Binding Log}"
                      IsReadOnly="True"
                      AcceptsReturn="True"
@@ -296,7 +380,8 @@
                      Background="#F5F5F5"
                      ToolTip.Tip="操作日志，显示翻译过程中的详细信息，会自动滚动到底部"/>
 
-            <!-- 底部留白由 Grid 自动处理，无需额外控件 -->
+            <!-- ===== 第11行：底部留白 ===== -->
+            <Grid Grid.Row="11"/>
         </Grid>
     </ScrollViewer>
 </Window>

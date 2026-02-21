@@ -10,32 +10,22 @@ using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using iText.Kernel.Pdf.Extgstate;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
 namespace PDFTranslator.Core;
 
 /// <summary>
-/// PDF 翻译器核心类，负责：
-/// 1. 从 PDF 提取文本块及其位置信息
-/// 2. 调用 Ollama 翻译文本
-/// 3. 生成新的 PDF，保留原文或添加译文，并尽量保持原始排版
-/// 支持两种模式：双语对照（保留原文+译文）和仅译文（替换原文）
-/// 支持进度报告功能，通过 IProgressReporter 接口向 UI 报告处理进度
+/// PDF 翻译器核心类 - 支持流式处理和传统模式
 /// </summary>
 public class PdfTranslator
 {
-    private readonly OllamaService _ollama;           // Ollama 翻译服务
-    private readonly ILogger<PdfTranslator> _logger;   // 日志记录器
-    private readonly TranslationOptions _options;      // 翻译配置选项（包含语言、字体、模式等）
-    private IProgressReporter? _progressReporter;      // 可选的进度报告器，由调用方设置
+    private readonly OllamaService _ollama;
+    private readonly ILogger<PdfTranslator> _logger;
+    private readonly TranslationOptions _options;
+    private IProgressReporter? _progressReporter;
 
-    /// <summary>
-    /// 构造函数，通过依赖注入获取所需服务。
-    /// </summary>
-    /// <param name="ollama">Ollama 翻译服务实例</param>
-    /// <param name="logger">日志记录器</param>
-    /// <param name="options">翻译配置选项，包含语言、字体、模式等设置</param>
     public PdfTranslator(OllamaService ollama, ILogger<PdfTranslator> logger, TranslationOptions options)
     {
         _ollama = ollama;
@@ -43,68 +33,367 @@ public class PdfTranslator
         _options = options;
     }
 
-    /// <summary>
-    /// 设置进度报告器，用于接收处理进度更新（由 CLI 或 GUI 在调用翻译前设置）。
-    /// </summary>
-    /// <param name="reporter">实现了 IProgressReporter 接口的进度报告器</param>
     public void SetProgressReporter(IProgressReporter reporter)
     {
         _progressReporter = reporter;
     }
 
     /// <summary>
-    /// 翻译 PDF 文件的主入口方法。
+    /// 翻译 PDF 文件的主入口方法 - 根据配置选择处理模式
     /// </summary>
-    /// <param name="inputPath">输入 PDF 文件路径</param>
-    /// <param name="outputPath">输出 PDF 文件路径</param>
     public async Task TranslatePdfAsync(string inputPath, string outputPath)
     {
         _logger.LogInformation("开始处理 PDF: {InputPath}", inputPath);
+        _logger.LogInformation("处理模式: {Mode}, 批处理大小: {BatchSize}, 最大文本块: {MaxBlocks}", 
+            _options.UseStreamingMode ? "流式处理" : "传统模式",
+            _options.TextBlockBatchSize,
+            _options.MaxTextBlocksPerPage);
 
-        // 使用 using 确保资源释放：读取器、写入器和 PDF 文档对象
+        long startMemory = LogMemoryUsage("初始状态");
+
+        if (_options.UseStreamingMode)
+        {
+            await TranslatePdfStreamingAsync(inputPath, outputPath);
+        }
+        else
+        {
+            await TranslatePdfTraditionalAsync(inputPath, outputPath);
+        }
+
+        long endMemory = LogMemoryUsage("翻译完成");
+        _logger.LogInformation("内存变化: {Start}MB -> {End}MB, 差异: {Delta}MB", 
+            startMemory, endMemory, endMemory - startMemory);
+    }
+
+    #region 流式处理模式
+
+    /// <summary>
+    /// 流式处理模式 - 低内存占用
+    /// </summary>
+    private async Task TranslatePdfStreamingAsync(string inputPath, string outputPath)
+    {
+        _logger.LogInformation("使用流式处理模式");
+
         using var reader = new PdfReader(inputPath);
         using var writer = new PdfWriter(outputPath);
         using var pdf = new PdfDocument(reader, writer);
 
-        int pageCount = pdf.GetNumberOfPages();
+        int totalPages = pdf.GetNumberOfPages();
+        _logger.LogInformation("PDF 总页数: {TotalPages}", totalPages);
 
-        // 报告初始进度（0%）
-        _progressReporter?.Report(0, pageCount, "开始处理...");
-
-        // 逐页处理
-        for (int pageNum = 1; pageNum <= pageCount; pageNum++)
+        // 解析页面范围并排序（流式处理要求顺序访问）
+        var pagesToProcess = ParsePageRange(_options, totalPages, _logger);
+        pagesToProcess.Sort();
+        
+        if (pagesToProcess.Count == 0)
         {
-            _logger.LogInformation("正在处理第 {PageNum}/{TotalPages} 页...", pageNum, pageCount);
-
-            // 报告当前页进度（pageNum-1 表示已处理完的页数，因为当前页尚未完成）
-            _progressReporter?.Report(pageNum - 1, pageCount, $"正在处理第 {pageNum} 页...");
-
-            var page = pdf.GetPage(pageNum);
-
-            // 提取当前页的所有文本块及其位置
-            var textBlocks = ExtractTextBlocks(page);
-
-            // 如果当前页没有文本，跳过但保留原页面内容
-            if (textBlocks.Count == 0)
-            {
-                _logger.LogWarning("第 {PageNum} 页没有可翻译的文本", pageNum);
-                continue;
-            }
-
-            // 在当前页上添加译文（根据配置的模式）
-            await AddTranslationsToPage(pdf, page, textBlocks);
+            _logger.LogWarning("没有符合条件的页面需要翻译");
+            _progressReporter?.Complete("没有页面需要翻译");
+            return;
         }
 
-        // 报告完成状态
+        _logger.LogInformation("将处理 {Count} 页: [{Pages}]", 
+            pagesToProcess.Count, string.Join(", ", pagesToProcess));
+
+        _progressReporter?.Report(0, pagesToProcess.Count, "开始处理...");
+
+        int processedCount = 0;
+
+        // 流式处理：顺序访问所有页面
+        for (int pageNum = 1; pageNum <= totalPages; pageNum++)
+        {
+            // 检查内存使用
+            CheckMemoryUsage();
+
+            bool needProcess = pagesToProcess.Contains(pageNum);
+            
+            if (needProcess)
+            {
+                processedCount++;
+                
+                _logger.LogInformation("正在流式处理第 {PageNum}/{TotalPages} 页 (进度: {Processed}/{TotalToProcess})", 
+                    pageNum, totalPages, processedCount, pagesToProcess.Count);
+                
+                _progressReporter?.Report(processedCount - 1, pagesToProcess.Count, 
+                    $"正在处理第 {pageNum} 页 (共需处理 {pagesToProcess.Count} 页)");
+
+                try
+                {
+                    await ProcessPageStreamingAsync(pdf, pageNum);
+                }
+                catch (OutOfMemoryException)
+                {
+                    _logger.LogError("处理第 {PageNum} 页时内存不足，跳过该页", pageNum);
+                    ForceFullGC();
+                    
+                    // 检查是否达到临界阈值
+                    if (IsMemoryCritical())
+                    {
+                        _logger.LogError("内存使用达到临界值，停止处理");
+                        _progressReporter?.Complete("内存使用过高，请重启程序后重试");
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "处理第 {PageNum} 页时发生错误", pageNum);
+                }
+            }
+            else
+            {
+                _logger.LogDebug("跳过第 {PageNum} 页", pageNum);
+            }
+
+            // 每页后根据配置决定是否GC
+            if (_options.ForceGCAfterPage)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+        }
+
         _progressReporter?.Complete("翻译完成！");
-        _logger.LogInformation("PDF 翻译完成，已保存至 {OutputPath}", outputPath);
+        _logger.LogInformation("流式PDF处理完成");
     }
 
     /// <summary>
-    /// 使用自定义策略提取页面中的所有文本块及其位置矩形。
+    /// 流式处理单个页面
     /// </summary>
-    /// <param name="page">PDF 页面对象</param>
-    /// <returns>文本块列表，每个块包含文本内容和位置矩形</returns>
+    private async Task ProcessPageStreamingAsync(PdfDocument pdf, int pageNum)
+    {
+        var page = pdf.GetPage(pageNum);
+        
+        // 提取文本块（使用配置的最大数量）
+        var textBlocks = await ExtractTextBlocksWithLimitAsync(page, _options.MaxTextBlocksPerPage);
+        
+        if (textBlocks.Count == 0)
+        {
+            _logger.LogWarning("第 {PageNum} 页没有可翻译的文本", pageNum);
+            return;
+        }
+
+        _logger.LogInformation("第 {PageNum} 页提取到 {Count} 个文本块", pageNum, textBlocks.Count);
+
+        // 添加译文（使用配置的批处理大小）
+        await AddTranslationsBatchedAsync(pdf, page, textBlocks, _options.TextBlockBatchSize);
+        
+        // 清理页面引用，帮助GC
+        page = null;
+    }
+
+    /// <summary>
+    /// 批量添加译文 - 使用配置的批处理大小
+    /// </summary>
+    private async Task AddTranslationsBatchedAsync(PdfDocument pdf, PdfPage page, List<TextBlock> blocks, int batchSize)
+    {
+        PdfFont? font = null;
+        PdfCanvas? canvas = null;
+        
+        try
+        {
+            canvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdf);
+
+            // 获取字体
+            try
+            {
+                font = FontHelper.GetFont(_options, _logger);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "加载字体失败，使用默认字体");
+                font = PdfFontFactory.CreateFont();
+            }
+
+            float defaultFontSize = 10;
+
+            // 将文本块分成多个批次
+            var batches = blocks.Select((block, index) => new { block, index })
+                .GroupBy(x => x.index / batchSize)
+                .Select(g => g.Select(x => x.block).ToList())
+                .ToList();
+
+            _logger.LogDebug("将 {TotalBlocks} 个文本块分为 {BatchCount} 批处理", blocks.Count, batches.Count);
+
+            int batchIndex = 0;
+            foreach (var batch in batches)
+            {
+                batchIndex++;
+                _logger.LogDebug("处理第 {BatchIndex}/{BatchCount} 批，共 {BatchSize} 个文本块", 
+                    batchIndex, batches.Count, batch.Count);
+
+                // 翻译当前批次
+                var translations = await TranslateBatchAsync(batch);
+
+                // 绘制当前批次
+                if (_options.Mode == TranslationMode.Bilingual)
+                {
+                    canvas.SetColor(ColorConstants.BLUE, true);
+                    canvas.SetExtGState(new PdfExtGState().SetFillOpacity(0.8f));
+
+                    foreach (var (block, translated) in translations)
+                    {
+                        if (block.Rect == null) continue;
+
+                        float x = block.Rect.GetX();
+                        float y = block.Rect.GetY() - defaultFontSize - 2;
+
+                        if (y < 0)
+                        {
+                            y = block.Rect.GetY() + block.Rect.GetHeight() + 2;
+                        }
+
+                        canvas.BeginText()
+                            .SetFontAndSize(font, defaultFontSize)
+                            .MoveText(x, y)
+                            .ShowText(translated)
+                            .EndText();
+                    }
+                }
+                else // 仅译文模式
+                {
+                    canvas.SetFillColor(ColorConstants.WHITE);
+                    canvas.SetStrokeColor(ColorConstants.WHITE);
+
+                    foreach (var (block, translated) in translations)
+                    {
+                        if (block.Rect == null) continue;
+
+                        float x = block.Rect.GetX();
+                        float y = block.Rect.GetY();
+                        float width = block.Rect.GetWidth();
+                        float height = block.Rect.GetHeight();
+                        float blockFontSize = height * 0.8f;
+
+                        canvas.Rectangle(x, y, width, height).Fill();
+
+                        canvas.SetColor(ColorConstants.BLACK, true);
+                        canvas.BeginText()
+                            .SetFontAndSize(font, blockFontSize)
+                            .MoveText(x, y + (height - blockFontSize) / 2)
+                            .ShowText(translated)
+                            .EndText();
+
+                        canvas.SetFillColor(ColorConstants.WHITE);
+                    }
+                }
+
+                // 每批次后清理
+                translations.Clear();
+                GC.Collect();
+                await Task.Delay(5); // 短暂暂停，让系统有机会回收
+            }
+        }
+        finally
+        {
+            // 清理资源
+            canvas = null;
+            font = null;
+        }
+    }
+
+    /// <summary>
+    /// 批量翻译文本块
+    /// </summary>
+    private async Task<List<(TextBlock Block, string Translation)>> TranslateBatchAsync(List<TextBlock> batch)
+    {
+        var translations = new List<(TextBlock, string)>();
+        
+        foreach (var block in batch)
+        {
+            if (string.IsNullOrWhiteSpace(block.Text) || block.Rect == null)
+                continue;
+
+            // 限制单个文本长度
+            string textToTranslate = block.Text.Length > _options.MaxTextBlockLength 
+                ? block.Text.Substring(0, _options.MaxTextBlockLength) + "..." 
+                : block.Text;
+
+            string translated = await _ollama.TranslateAsync(
+                textToTranslate, 
+                _options.SourceLanguage, 
+                _options.TargetLanguage);
+
+            translations.Add((block, translated));
+        }
+        
+        return translations;
+    }
+
+    #endregion
+
+    #region 传统处理模式
+
+    /// <summary>
+    /// 传统处理模式 - 兼容原有逻辑
+    /// </summary>
+    private async Task TranslatePdfTraditionalAsync(string inputPath, string outputPath)
+    {
+        _logger.LogInformation("使用传统处理模式");
+
+        using var reader = new PdfReader(inputPath);
+        using var writer = new PdfWriter(outputPath);
+        using var pdf = new PdfDocument(reader, writer);
+
+        int totalPages = pdf.GetNumberOfPages();
+        _logger.LogInformation("PDF 总页数: {TotalPages}", totalPages);
+
+        var pagesToProcess = ParsePageRange(_options, totalPages, _logger);
+        if (pagesToProcess.Count == 0)
+        {
+            _logger.LogWarning("没有符合条件的页面需要翻译");
+            _progressReporter?.Complete("没有页面需要翻译");
+            return;
+        }
+
+        _logger.LogInformation("将处理 {Count} 页: [{Pages}]", pagesToProcess.Count, string.Join(", ", pagesToProcess));
+
+        _progressReporter?.Report(0, pagesToProcess.Count, "开始处理...");
+
+        int processedCount = 0;
+        foreach (int pageNum in pagesToProcess)
+        {
+            processedCount++;
+            _logger.LogInformation("正在处理第 {PageNum} 页...", pageNum);
+            _progressReporter?.Report(processedCount - 1, pagesToProcess.Count, $"正在处理第 {pageNum} 页...");
+
+            try
+            {
+                await ProcessPageTraditionalAsync(pdf, pageNum);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "处理第 {PageNum} 页时发生错误", pageNum);
+            }
+        }
+
+        _progressReporter?.Complete("翻译完成！");
+        _logger.LogInformation("传统PDF处理完成");
+    }
+
+    /// <summary>
+    /// 传统模式处理单个页面
+    /// </summary>
+    private async Task ProcessPageTraditionalAsync(PdfDocument pdf, int pageNum)
+    {
+        var page = pdf.GetPage(pageNum);
+        var textBlocks = ExtractTextBlocks(page);
+
+        if (textBlocks.Count == 0)
+        {
+            _logger.LogWarning("第 {PageNum} 页没有可翻译的文本", pageNum);
+            return;
+        }
+
+        await AddTranslationsToPage(pdf, page, textBlocks);
+    }
+
+    #endregion
+
+    #region 公共辅助方法
+
+    /// <summary>
+    /// 提取文本块（传统方式）
+    /// </summary>
     private List<TextBlock> ExtractTextBlocks(PdfPage page)
     {
         var strategy = new TextBlockExtractionStrategy();
@@ -114,19 +403,42 @@ public class PdfTranslator
     }
 
     /// <summary>
-    /// 根据配置的模式在页面上添加译文。
-    /// 双语模式：保留原文，在原文下方添加蓝色半透明译文。
-    /// 仅译文模式：用白色矩形覆盖原文，然后在相同位置绘制黑色译文。
+    /// 提取文本块并限制数量
     /// </summary>
-    /// <param name="pdf">PDF 文档对象</param>
-    /// <param name="page">当前页面</param>
-    /// <param name="blocks">当前页的文本块列表</param>
+    private async Task<List<TextBlock>> ExtractTextBlocksWithLimitAsync(PdfPage page, int maxBlocks)
+    {
+        return await Task.Run(() =>
+        {
+            var strategy = new TextBlockExtractionStrategy();
+            var parser = new PdfCanvasProcessor(strategy);
+            parser.ProcessPageContent(page);
+            
+            var allBlocks = strategy.GetTextBlocks();
+            
+            if (allBlocks.Count > maxBlocks)
+            {
+                _logger.LogWarning("文本块数量过多 ({Count})，将选择最重要的 {Max} 个处理", 
+                    allBlocks.Count, maxBlocks);
+                
+                // 按文本长度排序，取最长的
+                return allBlocks
+                    .Where(b => !string.IsNullOrWhiteSpace(b.Text))
+                    .OrderByDescending(b => b.Text?.Length ?? 0)
+                    .Take(maxBlocks)
+                    .ToList();
+            }
+            
+            return allBlocks;
+        });
+    }
+
+    /// <summary>
+    /// 添加译文到页面（传统方式）
+    /// </summary>
     private async Task AddTranslationsToPage(PdfDocument pdf, PdfPage page, List<TextBlock> blocks)
     {
-        // 创建一个新的内容流，追加到原页面内容之后，保证原内容完全保留
         var canvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdf);
 
-        // 获取字体（根据用户配置自动选择，支持用户指定、系统检测或内嵌字体）
         PdfFont font;
         try
         {
@@ -134,109 +446,272 @@ public class PdfTranslator
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "加载字体失败，使用默认字体（中文可能显示为方框）");
-            font = PdfFontFactory.CreateFont(); // 回退到默认字体
+            _logger.LogWarning(ex, "加载字体失败，使用默认字体");
+            font = PdfFontFactory.CreateFont();
         }
 
-        float fontSize = 10; // 默认字号，可根据需要调整
+        float defaultFontSize = 10;
 
         if (_options.Mode == TranslationMode.Bilingual)
         {
-            // ========== 双语对照模式 ==========
-            canvas.SetColor(ColorConstants.BLUE, true);               // 设置字体颜色为蓝色
-            canvas.SetExtGState(new PdfExtGState().SetFillOpacity(0.8f)); // 设置透明度 80%
+            canvas.SetColor(ColorConstants.BLUE, true);
+            canvas.SetExtGState(new PdfExtGState().SetFillOpacity(0.8f));
 
             foreach (var block in blocks)
             {
                 if (string.IsNullOrWhiteSpace(block.Text) || block.Rect == null)
                     continue;
 
-                // 调用 Ollama 翻译原文，传递源语言和目标语言代码
                 string translated = await _ollama.TranslateAsync(block.Text, _options.SourceLanguage, _options.TargetLanguage);
 
-                float x = block.Rect.GetX();                      // 原文左下角 X 坐标
-                float y = block.Rect.GetY() - fontSize - 2;       // 译文放在原文下方，间距 2 点
+                float x = block.Rect.GetX();
+                float y = block.Rect.GetY() - defaultFontSize - 2;
 
-                // 如果超出页面底部，则放在原文上方
                 if (y < 0)
                 {
                     y = block.Rect.GetY() + block.Rect.GetHeight() + 2;
                 }
 
-                // 绘制译文
                 canvas.BeginText()
-                    .SetFontAndSize(font, fontSize)
+                    .SetFontAndSize(font, defaultFontSize)
                     .MoveText(x, y)
                     .ShowText(translated)
                     .EndText();
             }
         }
-        else // TranslationMode.Translate
+        else
         {
-            // ========== 仅译文模式 ==========
-            canvas.SetFillColor(ColorConstants.WHITE);   // 设置填充色为白色
-            canvas.SetStrokeColor(ColorConstants.WHITE); // 设置描边色为白色
+            canvas.SetFillColor(ColorConstants.WHITE);
+            canvas.SetStrokeColor(ColorConstants.WHITE);
 
             foreach (var block in blocks)
             {
                 if (string.IsNullOrWhiteSpace(block.Text) || block.Rect == null)
                     continue;
 
-                // 调用 Ollama 翻译原文，传递语言代码
                 string translated = await _ollama.TranslateAsync(block.Text, _options.SourceLanguage, _options.TargetLanguage);
 
                 float x = block.Rect.GetX();
                 float y = block.Rect.GetY();
                 float width = block.Rect.GetWidth();
                 float height = block.Rect.GetHeight();
+                float blockFontSize = height * 0.8f;
 
-                // 绘制白色矩形覆盖原文区域
                 canvas.Rectangle(x, y, width, height).Fill();
 
-                // 切换为黑色绘制译文
                 canvas.SetColor(ColorConstants.BLACK, true);
                 canvas.BeginText()
-                    .SetFontAndSize(font, fontSize)
-                    .MoveText(x, y + (height - fontSize) / 2) // 垂直居中
+                    .SetFontAndSize(font, blockFontSize)
+                    .MoveText(x, y + (height - blockFontSize) / 2)
                     .ShowText(translated)
                     .EndText();
 
-                // 恢复填充色为白色，以便下一个矩形使用
                 canvas.SetFillColor(ColorConstants.WHITE);
             }
         }
     }
 
     /// <summary>
-    /// 表示一个文本块及其在页面上的位置矩形。
-    /// 用于在提取文本时同时记录坐标信息，便于后续精准放置译文。
+    /// 检查内存使用并记录警告
     /// </summary>
-    private class TextBlock
+    private void CheckMemoryUsage()
     {
-        /// <summary>文本内容（可能为 null）</summary>
-        public string? Text { get; set; }
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            var memoryMB = process.WorkingSet64 / 1024 / 1024;
 
-        /// <summary>文本所占的矩形区域（可能为 null）</summary>
-        public Rectangle? Rect { get; set; }
+            if (memoryMB > _options.MemoryWarningThresholdMB)
+            {
+                _logger.LogWarning("内存使用超过警告阈值: {Current}MB > {Threshold}MB", 
+                    memoryMB, _options.MemoryWarningThresholdMB);
+                
+                if (memoryMB > _options.MemoryCriticalThresholdMB)
+                {
+                    _logger.LogError("内存使用超过临界阈值: {Current}MB > {Threshold}MB", 
+                        memoryMB, _options.MemoryCriticalThresholdMB);
+                }
+            }
+        }
+        catch { }
     }
 
     /// <summary>
-    /// 自定义文本提取策略，实现 ITextExtractionStrategy 接口。
-    /// 用于收集页面中每个文本块及其精确位置，而不是只提取纯文本。
+    /// 判断内存是否达到临界值
     /// </summary>
+    private bool IsMemoryCritical()
+    {
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            var memoryMB = process.WorkingSet64 / 1024 / 1024;
+            return memoryMB > _options.MemoryCriticalThresholdMB;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 强制完全垃圾回收
+    /// </summary>
+    private void ForceFullGC()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect(2, GCCollectionMode.Forced, true);
+    }
+
+    /// <summary>
+    /// 记录内存使用
+    /// </summary>
+    private long LogMemoryUsage(string stage)
+    {
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            var workingSet = process.WorkingSet64 / 1024 / 1024;
+            var managedMemory = GC.GetTotalMemory(false) / 1024 / 1024;
+            var gcGen0 = GC.CollectionCount(0);
+            var gcGen1 = GC.CollectionCount(1);
+            var gcGen2 = GC.CollectionCount(2);
+            
+            _logger.LogInformation("[内存] {Stage} - 工作集: {WorkingSet}MB, 托管: {ManagedMemory}MB, GC: {G0}/{G1}/{G2}",
+                stage, workingSet, managedMemory, gcGen0, gcGen1, gcGen2);
+            
+            return workingSet;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    #endregion
+
+    #region 页面范围解析方法
+
+    /// <summary>
+    /// 解析页面范围字符串，返回要处理的页码列表
+    /// </summary>
+    private List<int> ParsePageRange(TranslationOptions options, int totalPages, ILogger logger)
+    {
+        var pages = new List<int>();
+
+        switch (options.PageRangeMode)
+        {
+            case PageRangeMode.All:
+                pages.AddRange(Enumerable.Range(1, totalPages));
+                logger.LogDebug("选择全部页面: 1-{Total}", totalPages);
+                break;
+
+            case PageRangeMode.Single:
+                if (options.SinglePage.HasValue && options.SinglePage.Value >= 1 && options.SinglePage.Value <= totalPages)
+                {
+                    pages.Add(options.SinglePage.Value);
+                    logger.LogDebug("选择单个页面: {Page}", options.SinglePage.Value);
+                }
+                else
+                {
+                    logger.LogWarning("无效的单个页面页码: {Page}，将使用全部页面", options.SinglePage);
+                    pages.AddRange(Enumerable.Range(1, totalPages));
+                }
+                break;
+
+            case PageRangeMode.Range:
+                if (!string.IsNullOrWhiteSpace(options.PageRange))
+                {
+                    pages = ParseRangeString(options.PageRange, totalPages, logger);
+                    if (pages.Count == 0)
+                    {
+                        logger.LogWarning("页码范围解析失败，将使用全部页面");
+                        pages.AddRange(Enumerable.Range(1, totalPages));
+                    }
+                }
+                else
+                {
+                    logger.LogWarning("未指定页码范围，将使用全部页面");
+                    pages.AddRange(Enumerable.Range(1, totalPages));
+                }
+                break;
+        }
+
+        return pages.Distinct().OrderBy(p => p).ToList();
+    }
+
+    /// <summary>
+    /// 解析范围字符串，如 "1-5,7,9-11"
+    /// </summary>
+    private List<int> ParseRangeString(string rangeStr, int totalPages, ILogger logger)
+    {
+        var pages = new List<int>();
+        var parts = rangeStr.Split(',');
+
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed)) continue;
+
+            if (trimmed.Contains('-'))
+            {
+                var rangeParts = trimmed.Split('-');
+                if (rangeParts.Length == 2 &&
+                    int.TryParse(rangeParts[0], out int start) &&
+                    int.TryParse(rangeParts[1], out int end))
+                {
+                    start = Math.Max(1, Math.Min(start, totalPages));
+                    end = Math.Max(1, Math.Min(end, totalPages));
+                    if (start <= end)
+                    {
+                        pages.AddRange(Enumerable.Range(start, end - start + 1));
+                    }
+                    else
+                    {
+                        logger.LogWarning("无效的范围: {Range}", trimmed);
+                    }
+                }
+                else
+                {
+                    logger.LogWarning("无法解析范围: {Range}", trimmed);
+                }
+            }
+            else if (int.TryParse(trimmed, out int singlePage))
+            {
+                if (singlePage >= 1 && singlePage <= totalPages)
+                {
+                    pages.Add(singlePage);
+                }
+                else
+                {
+                    logger.LogWarning("页码超出范围: {Page}", singlePage);
+                }
+            }
+            else
+            {
+                logger.LogWarning("无法解析: {Part}", trimmed);
+            }
+        }
+
+        return pages;
+    }
+
+    #endregion
+
+    #region 内部类
+
+    private class TextBlock
+    {
+        public string? Text { get; set; }
+        public Rectangle? Rect { get; set; }
+    }
+
     private class TextBlockExtractionStrategy : ITextExtractionStrategy
     {
         private List<TextBlock> _textBlocks = new();
 
-        /// <summary>
-        /// 当解析器遇到事件时调用（如文本渲染、图像等）。
-        /// 我们只关心 RENDER_TEXT 事件，获取文本及其边界矩形。
-        /// </summary>
-        /// <param name="data">事件数据</param>
-        /// <param name="type">事件类型</param>
         public void EventOccurred(IEventData data, EventType type)
         {
-            // 只处理文本渲染事件
             if (type == EventType.RENDER_TEXT)
             {
                 var renderInfo = (TextRenderInfo)data;
@@ -244,43 +719,24 @@ public class PdfTranslator
                 if (string.IsNullOrWhiteSpace(text))
                     return;
 
-                // 获取文本的上升线和下降线，用于计算精确的边界矩形
                 var ascentLine = renderInfo.GetAscentLine();
                 var descentLine = renderInfo.GetDescentLine();
 
-                // 计算矩形的左下角坐标和宽高
                 float x1 = Math.Min(ascentLine.GetStartPoint().Get(0), descentLine.GetStartPoint().Get(0));
                 float x2 = Math.Max(ascentLine.GetEndPoint().Get(0), descentLine.GetEndPoint().Get(0));
                 float y1 = Math.Min(descentLine.GetStartPoint().Get(1), descentLine.GetEndPoint().Get(1));
                 float y2 = Math.Max(ascentLine.GetStartPoint().Get(1), ascentLine.GetEndPoint().Get(1));
                 var rect = new Rectangle(x1, y1, x2 - x1, y2 - y1);
 
-                // 添加到列表
                 _textBlocks.Add(new TextBlock { Text = text, Rect = rect });
             }
         }
 
-        /// <summary>
-        /// 返回此策略关心的事件类型，以优化解析性能。
-        /// </summary>
-        public ICollection<EventType> GetSupportedEvents()
-        {
-            return new List<EventType> { EventType.RENDER_TEXT };
-        }
-
-        /// <summary>
-        /// 获取收集到的所有文本块。
-        /// </summary>
+        public ICollection<EventType> GetSupportedEvents() => new List<EventType> { EventType.RENDER_TEXT };
         public List<TextBlock> GetTextBlocks() => _textBlocks;
-
-        /// <summary>
-        /// 获取提取到的全部文本（用于兼容旧版接口）。
-        /// </summary>
         public string GetResultantText() => string.Join("", _textBlocks.Select(t => t.Text));
-
-        /// <summary>
-        /// 旧版接口遗留方法，无需实现。
-        /// </summary>
         public void RenderText(TextRenderInfo renderInfo) { }
     }
+
+    #endregion
 }

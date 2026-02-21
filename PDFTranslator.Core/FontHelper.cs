@@ -1,11 +1,9 @@
 using iText.Kernel.Font;
-using iText.Kernel.Pdf;  // 必须添加此行以解决 PdfEncodings 未找到的错误
+using iText.Kernel.Pdf;
+using iText.IO.Font;
 using Microsoft.Extensions.Logging;
 using System.Reflection;
-using iText.IO.Font;
-using iText.IO.Font.Constants;
-using iText.Layout.Font;
-
+using System.Runtime.InteropServices;
 
 namespace PDFTranslator.Core;
 
@@ -14,29 +12,11 @@ namespace PDFTranslator.Core;
 /// </summary>
 public class FontInfo
 {
-    /// <summary>
-    /// 字体名称
-    /// </summary>
     public string Name { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// 字体文件路径（如果是文件字体）
-    /// </summary>
     public string? FilePath { get; set; }
-    
-    /// <summary>
-    /// 字体类型：系统字体、用户指定、嵌入字体
-    /// </summary>
     public FontSourceType SourceType { get; set; }
-    
-    /// <summary>
-    /// 字体是否支持中文
-    /// </summary>
     public bool SupportsChinese { get; set; }
-    
-    /// <summary>
-    /// 字体显示名称
-    /// </summary>
+    public long MemoryUsage { get; set; }
     public string DisplayName => $"{Name} ({GetSourceTypeName()})";
     
     private string GetSourceTypeName()
@@ -56,60 +36,40 @@ public class FontInfo
 /// </summary>
 public enum FontSourceType
 {
-    /// <summary>系统已安装字体</summary>
     System,
-    /// <summary>用户指定的字体文件</summary>
     UserFile,
-    /// <summary>程序内嵌的字体</summary>
     Embedded
 }
 
 /// <summary>
-/// 字体辅助类，提供多级字体加载机制：
-/// 1. 用户指定字体文件路径（最高优先级）
-/// 2. 用户指定字体名称
-/// 3. 自动检测系统常用中文字体
-/// 4. 回退到嵌入字体（内置 Noto Sans SC）
-/// 5. 最终回退到 iText 默认字体（不支持中文）
+/// 字体辅助类 - 内存优化版本
 /// </summary>
 public static class FontHelper
 {
-    // 字体缓存，避免重复加载
-    private static PdfFont? _cachedFont;
+    // 字体缓存，使用弱引用避免内存泄漏
+    private static WeakReference<PdfFont>? _cachedFontWeak;
     private static FontInfo? _cachedFontInfo;
     private static readonly object _lock = new object();
+    
+    // 字体使用计数
+    private static int _fontUsageCount = 0;
+    
+    // 最大缓存次数，超过后强制重新加载（避免内存泄漏）
+    private const int MAX_CACHE_USAGE = 100;
 
     // 嵌入字体资源名称列表（按优先级排序）
     private static readonly string[] _embeddedFontResources = new[]
     {
         "PDFTranslator.Core.Fonts.NotoSansSC-Regular.ttf",
-        "PDFTranslator.Core.Fonts.NotoSansSC-Regular.otf",
-        "PDFTranslator.Core.Fonts.SimSun.ttf",
-        "PDFTranslator.Core.Fonts.MicrosoftYaHei.ttf"
+        "PDFTranslator.Core.Fonts.NotoSansSC-Regular.otf"
     };
 
     // 常用系统字体名称（按平台和优先级排序）
     private static readonly Dictionary<PlatformID, string[]> _systemFonts = new()
     {
-        [PlatformID.Win32NT] = new[] 
-        { 
-            "SimSun",           // 宋体（最常用）
-            "Microsoft YaHei",  // 微软雅黑
-            "KaiTi",            // 楷体
-            "FangSong"          // 仿宋
-        },
-        [PlatformID.Unix] = new[]
-        {
-            "Noto Sans CJK SC", // Linux 常用
-            "Noto Sans CJK JP",
-            "WenQuanYi Zen Hei" // 文泉驿
-        },
-        [PlatformID.MacOSX] = new[]
-        {
-            "PingFang SC",      // 苹方
-            "STHeiti",          // 黑体
-            "Apple LiGothic"    // 苹果丽黑
-        }
+        [PlatformID.Win32NT] = new[] { "SimSun" },
+        [PlatformID.Unix] = new[] { "Noto Sans CJK SC" },
+        [PlatformID.MacOSX] = new[] { "PingFang SC" }
     };
 
     /// <summary>
@@ -119,124 +79,130 @@ public static class FontHelper
     {
         get
         {
-            if (OperatingSystem.IsWindows())
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return PlatformID.Win32NT;
-            if (OperatingSystem.IsMacOS())
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 return PlatformID.MacOSX;
-            if (OperatingSystem.IsLinux())
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 return PlatformID.Unix;
             return PlatformID.Other;
         }
     }
 
     /// <summary>
-    /// 获取合适的字体，按优先级尝试
+    /// 获取合适的字体 - 内存优化版本
     /// </summary>
-    /// <param name="options">用户配置选项</param>
-    /// <param name="logger">日志记录器</param>
-    /// <returns>iText 的 PdfFont 对象</returns>
     public static PdfFont GetFont(TranslationOptions options, ILogger logger)
     {
         lock (_lock)
         {
-            // 如果缓存有效且配置未变，直接返回缓存
-            if (_cachedFont != null && _cachedFontInfo != null)
+            // 检查弱引用缓存
+            PdfFont? cachedFont = null;
+            if (_cachedFontWeak != null && _cachedFontWeak.TryGetTarget(out cachedFont))
             {
                 // 检查配置是否匹配
                 bool configMatch = true;
                 if (!string.IsNullOrEmpty(options.FontPath))
-                    configMatch = _cachedFontInfo.FilePath == options.FontPath;
+                    configMatch = _cachedFontInfo?.FilePath == options.FontPath;
                 else if (!string.IsNullOrEmpty(options.FontName))
-                    configMatch = _cachedFontInfo.Name == options.FontName;
+                    configMatch = _cachedFontInfo?.Name == options.FontName;
                 
-                if (configMatch)
+                if (configMatch && _fontUsageCount < MAX_CACHE_USAGE)
                 {
-                    logger.LogDebug("使用缓存的字体: {FontName}", _cachedFontInfo.DisplayName);
-                    return _cachedFont;
+                    _fontUsageCount++;
+                    logger.LogDebug("使用缓存的字体: {FontName} (使用次数: {Count})", 
+                        _cachedFontInfo?.DisplayName ?? "未知", _fontUsageCount);
+                    return cachedFont;
                 }
+                
+                logger.LogDebug("字体缓存使用次数过多，重新加载");
+                _cachedFontWeak = null;
+                _cachedFontInfo = null;
+                _fontUsageCount = 0;
             }
 
             // 清除旧缓存
-            _cachedFont = null;
+            _cachedFontWeak = null;
             _cachedFontInfo = null;
+            _fontUsageCount = 0;
 
             // 1. 尝试用户指定的字体文件路径
             if (!string.IsNullOrEmpty(options.FontPath))
             {
-                var font = TryLoadFromFile(options.FontPath, logger);
-                if (font != null)
+                var result = TryLoadFromFile(options.FontPath, logger);
+                if (result.font != null && result.info != null)
                 {
-                    _cachedFont = font;
-                    _cachedFontInfo = new FontInfo
-                    {
-                        Name = Path.GetFileNameWithoutExtension(options.FontPath),
-                        FilePath = options.FontPath,
-                        SourceType = FontSourceType.UserFile,
-                        SupportsChinese = true // 假设用户指定的字体支持中文
-                    };
+                    CacheFont(result.font, result.info);
                     logger.LogInformation("✓ 成功加载用户指定的字体文件: {Path}", options.FontPath);
-                    return font;
+                    return result.font;
                 }
             }
 
             // 2. 尝试用户指定的字体名称
             if (!string.IsNullOrEmpty(options.FontName))
             {
-                var font = TryLoadSystemFontByName(options.FontName, logger);
-                if (font != null)
+                var result = TryLoadSystemFontByName(options.FontName, logger);
+                if (result.font != null && result.info != null)
                 {
-                    _cachedFont = font;
-                    _cachedFontInfo = new FontInfo
-                    {
-                        Name = options.FontName,
-                        SourceType = FontSourceType.System,
-                        SupportsChinese = true
-                    };
+                    CacheFont(result.font, result.info);
                     logger.LogInformation("✓ 成功加载用户指定的字体名称: {FontName}", options.FontName);
-                    return font;
+                    return result.font;
                 }
             }
 
             // 3. 自动检测系统常用中文字体
             var systemFontResult = DetectAndLoadSystemFont(logger);
-            if (systemFontResult.HasValue)
+            if (systemFontResult.font != null && systemFontResult.info != null)
             {
-                var (font, info) = systemFontResult.Value;  // 使用元组解构
-                _cachedFont = font;
-                _cachedFontInfo = info;
-                logger.LogInformation("✓ 自动检测并使用系统字体: {FontName}", info.DisplayName);
-                return font;
+                CacheFont(systemFontResult.font, systemFontResult.info);
+                logger.LogInformation("✓ 自动检测并使用系统字体: {FontName}", systemFontResult.info.DisplayName);
+                return systemFontResult.font;
             }
 
             // 4. 尝试加载嵌入字体
             var embeddedFontResult = LoadEmbeddedFont(logger);
-            if (embeddedFontResult.HasValue)
+            if (embeddedFontResult.font != null && embeddedFontResult.info != null)
             {
-                var (font, info) = embeddedFontResult.Value;  // 使用元组解构
-                _cachedFont = font;
-                _cachedFontInfo = info;
-                logger.LogInformation("✓ 使用内置字体: {FontName}", info.DisplayName);
-                return font;
+                CacheFont(embeddedFontResult.font, embeddedFontResult.info);
+                logger.LogInformation("✓ 使用内置字体: {FontName}", embeddedFontResult.info.DisplayName);
+                return embeddedFontResult.font;
             }
 
-            // 5. 最终回退到 iText 默认字体（不支持中文）
-            logger.LogWarning("⚠️ 未能加载任何中文字体，将使用默认字体（中文可能显示为方框）");
+            // 5. 最终回退到 iText 默认字体
+            logger.LogWarning("⚠️ 未能加载任何中文字体，将使用默认字体");
             var defaultFont = PdfFontFactory.CreateFont();
-            _cachedFont = defaultFont;
-            _cachedFontInfo = new FontInfo
+            var defaultInfo = new FontInfo
             {
                 Name = "Default",
                 SourceType = FontSourceType.System,
-                SupportsChinese = false
+                SupportsChinese = false,
+                MemoryUsage = EstimateFontMemory(defaultFont)
             };
+            CacheFont(defaultFont, defaultInfo);
             return defaultFont;
         }
     }
 
     /// <summary>
+    /// 缓存字体（使用弱引用）
+    /// </summary>
+    private static void CacheFont(PdfFont font, FontInfo info)
+    {
+        _cachedFontWeak = new WeakReference<PdfFont>(font);
+        _cachedFontInfo = info;
+        _fontUsageCount = 1;
+    }
+
+    /// <summary>
     /// 获取当前使用的字体信息
     /// </summary>
-    public static FontInfo? GetCurrentFontInfo() => _cachedFontInfo;
+    public static FontInfo? GetCurrentFontInfo()
+    {
+        lock (_lock)
+        {
+            return _cachedFontInfo;
+        }
+    }
 
     /// <summary>
     /// 清除字体缓存
@@ -245,63 +211,85 @@ public static class FontHelper
     {
         lock (_lock)
         {
-            _cachedFont = null;
+            _cachedFontWeak = null;
             _cachedFontInfo = null;
+            _fontUsageCount = 0;
+            GC.Collect();
         }
     }
 
     /// <summary>
-    /// 从文件加载字体
+    /// 从文件加载字体 - 返回字体和信息
     /// </summary>
-    private static PdfFont? TryLoadFromFile(string fontPath, ILogger logger)
+    private static (PdfFont? font, FontInfo? info) TryLoadFromFile(string fontPath, ILogger logger)
     {
         try
         {
             if (!File.Exists(fontPath))
             {
                 logger.LogWarning("字体文件不存在: {Path}", fontPath);
-                return null;
+                return (null, null);
             }
 
-            // 检查文件扩展名
             var ext = Path.GetExtension(fontPath).ToLower();
             if (ext != ".ttf" && ext != ".ttc" && ext != ".otf")
             {
                 logger.LogWarning("不支持的字体格式: {Ext}，仅支持 .ttf、.ttc、.otf", ext);
-                return null;
+                return (null, null);
             }
 
+            // 修复：移除第三个参数，使用正确的重载
             var font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
-            return font;
+            
+            var fontInfo = new FontInfo
+            {
+                Name = Path.GetFileNameWithoutExtension(fontPath),
+                FilePath = fontPath,
+                SourceType = FontSourceType.UserFile,
+                SupportsChinese = true,
+                MemoryUsage = EstimateFontMemory(font)
+            };
+            
+            return (font, fontInfo);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "加载字体文件失败: {Path}", fontPath);
-            return null;
+            return (null, null);
         }
     }
 
     /// <summary>
     /// 按名称加载系统字体
     /// </summary>
-    private static PdfFont? TryLoadSystemFontByName(string fontName, ILogger logger)
+    private static (PdfFont? font, FontInfo? info) TryLoadSystemFontByName(string fontName, ILogger logger)
     {
         try
         {
+            // 修复：移除第三个参数
             var font = PdfFontFactory.CreateRegisteredFont(fontName, PdfEncodings.IDENTITY_H);
-            return font;
+            
+            var fontInfo = new FontInfo
+            {
+                Name = fontName,
+                SourceType = FontSourceType.System,
+                SupportsChinese = true,
+                MemoryUsage = EstimateFontMemory(font)
+            };
+            
+            return (font, fontInfo);
         }
         catch (Exception ex)
         {
             logger.LogDebug(ex, "系统字体加载失败: {FontName}", fontName);
-            return null;
+            return (null, null);
         }
     }
 
     /// <summary>
     /// 检测并加载系统常用中文字体
     /// </summary>
-    private static (PdfFont font, FontInfo info)? DetectAndLoadSystemFont(ILogger logger)
+    private static (PdfFont? font, FontInfo? info) DetectAndLoadSystemFont(ILogger logger)
     {
         var platform = CurrentPlatform;
         
@@ -311,61 +299,39 @@ public static class FontHelper
             {
                 try
                 {
+                    // 修复：移除第三个参数
                     var font = PdfFontFactory.CreateRegisteredFont(fontName, PdfEncodings.IDENTITY_H);
                     if (font != null)
                     {
-                        return (font, new FontInfo
+                        var fontInfo = new FontInfo
                         {
                             Name = fontName,
                             SourceType = FontSourceType.System,
-                            SupportsChinese = true
-                        });
+                            SupportsChinese = true,
+                            MemoryUsage = EstimateFontMemory(font)
+                        };
+                        return (font, fontInfo);
                     }
                 }
                 catch
                 {
-                    // 忽略单个字体加载失败
                     continue;
                 }
             }
         }
 
-        // 跨平台通用尝试
-        string[] commonFonts = { "Arial Unicode MS", "FreeSerif", "DejaVu Sans" };
-        foreach (var fontName in commonFonts)
-        {
-            try
-            {
-                var font = PdfFontFactory.CreateRegisteredFont(fontName, PdfEncodings.IDENTITY_H);
-                if (font != null)
-                {
-                    return (font, new FontInfo
-                    {
-                        Name = fontName,
-                        SourceType = FontSourceType.System,
-                        SupportsChinese = false // 这些字体可能不支持完整中文
-                    });
-                }
-            }
-            catch
-            {
-                continue;
-            }
-        }
-
-        return null;
+        return (null, null);
     }
 
     /// <summary>
-    /// 从嵌入资源加载字体
+    /// 从嵌入资源加载字体 - 优化内存
     /// </summary>
-    private static (PdfFont font, FontInfo info)? LoadEmbeddedFont(ILogger logger)
+    private static (PdfFont? font, FontInfo? info) LoadEmbeddedFont(ILogger logger)
     {
         try
         {
             var assembly = Assembly.GetExecutingAssembly();
             
-            // 遍历所有可能的嵌入字体资源
             foreach (var resourceName in _embeddedFontResources)
             {
                 try
@@ -373,45 +339,36 @@ public static class FontHelper
                     using var stream = assembly.GetManifestResourceStream(resourceName);
                     if (stream != null)
                     {
-                        // 保存到临时文件（iText 需要从文件或流加载）
                         var tempPath = Path.Combine(Path.GetTempPath(), $"PDFTranslator_{Guid.NewGuid():N}.ttf");
                         
                         try
                         {
-                            // 确保临时文件可写
-                            if (File.Exists(tempPath))
-                                File.Delete(tempPath);
+                            using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096))
+                            {
+                                stream.CopyTo(fileStream);
+                                fileStream.Flush();
+                            }
                             
-                            using var fileStream = File.Create(tempPath);
-                            stream.CopyTo(fileStream);
-                            fileStream.Flush();
-                            
-                            // 从临时文件加载字体
+                            // 修复：移除第三个参数
                             var font = PdfFontFactory.CreateFont(tempPath, PdfEncodings.IDENTITY_H);
                             
-                            // 注册程序退出时删除临时文件
-                            AppDomain.CurrentDomain.ProcessExit += (s, e) =>
-                            {
-                                try
-                                {
-                                    if (File.Exists(tempPath))
-                                        File.Delete(tempPath);
-                                }
-                                catch { /* 忽略清理错误 */ }
-                            };
+                            try { File.Delete(tempPath); } catch { }
                             
                             var fontName = Path.GetFileNameWithoutExtension(resourceName);
-                            return (font, new FontInfo
+                            var fontInfo = new FontInfo
                             {
                                 Name = fontName,
                                 SourceType = FontSourceType.Embedded,
-                                SupportsChinese = true
-                            });
+                                SupportsChinese = true,
+                                MemoryUsage = EstimateFontMemory(font)
+                            };
+                            
+                            logger.LogDebug("嵌入字体加载成功，估计内存: {Memory}KB", fontInfo.MemoryUsage / 1024);
+                            return (font, fontInfo);
                         }
                         catch
                         {
-                            // 如果加载失败，清理临时文件
-                            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                            try { File.Delete(tempPath); } catch { }
                             throw;
                         }
                     }
@@ -424,48 +381,60 @@ public static class FontHelper
             }
 
             logger.LogWarning("未找到任何可用的嵌入字体资源");
-            return null;
+            return (null, null);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "加载嵌入字体时发生错误");
-            return null;
+            return (null, null);
         }
     }
 
     /// <summary>
-    /// 获取系统所有已安装的中文字体（用于下拉菜单）
+    /// 估计字体内存使用
     /// </summary>
-    public static List<FontInfo> GetSystemChineseFonts()
+    private static long EstimateFontMemory(PdfFont font)
     {
-        var fonts = new List<FontInfo>();
+        try
+        {
+            return 1024 * 1024; // 默认 1MB
+        }
+        catch
+        {
+            return 512 * 1024; // 默认 512KB
+        }
+    }
+
+    /// <summary>
+    /// 获取系统字体列表（延迟加载）
+    /// </summary>
+    public static IEnumerable<FontInfo> GetSystemChineseFonts()
+    {
         var platform = CurrentPlatform;
 
         if (_systemFonts.TryGetValue(platform, out var fontNames))
         {
             foreach (var name in fontNames)
             {
-                fonts.Add(new FontInfo
+                yield return new FontInfo
                 {
                     Name = name,
                     SourceType = FontSourceType.System,
-                    SupportsChinese = true
-                });
+                    SupportsChinese = true,
+                    MemoryUsage = 0
+                };
             }
         }
-
-        return fonts;
     }
 
     /// <summary>
-    /// 测试字体是否支持指定文本
+    /// 测试字体是否支持指定文本 - 修复 using 错误
     /// </summary>
     public static bool TestFontSupport(string fontName, string testText = "测试中文")
     {
         try
         {
             var font = PdfFontFactory.CreateRegisteredFont(fontName, PdfEncodings.IDENTITY_H);
-            // 简单的测试：尝试获取字符宽度
             font.GetWidth(testText);
             return true;
         }
